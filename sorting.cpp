@@ -476,7 +476,7 @@ public:
         {
             int ratio = int((avg / cnt / HEIGHT) * 999);
             sf::Sound* sound = new sf::Sound(trimmed_buffer);
-            sound->setVolume(SOUND_COEFF / 10.0);
+            sound->setVolume(SOUND_COEFF / 7.0);
             sound->setPitch(beep_pitches[ratio]);
             sound->play();
             sound_deque.push_back(sound);
@@ -1120,6 +1120,13 @@ public:
         line.setPosition(sf::Vector2f(x, y + (height / 2)));
         line.setFillColor(sf::Color(150, 150, 230));
 
+        if (max_range.second != -1)
+        {
+            max_line.setSize(sf::Vector2f(2, height / 3));
+            max_line.setPosition(sf::Vector2f(x + slider_width * MAX_RANGE_COEFF, y + 14));
+            max_line.setFillColor(sf::Color(255, 130, 130));
+        }
+
         rect.setSize(sf::Vector2f(slider_width + 1, height));
         rect.setPosition(sf::Vector2f(x, y));
 
@@ -1127,6 +1134,7 @@ public:
         moving_rect.setFillColor(sf::Color(30, 30, 30));
         moving_rect.setOrigin(sf::Vector2f(slider_width / 28, height / 4));
         moving_rect.setPosition(sf::Vector2f(x + slider_width / 2, y + height / 2));
+
 
         font.loadFromFile("regular.ttf");
         text.setFont(font);
@@ -1151,7 +1159,7 @@ public:
         {
             double ratio = (mouse_pos.x - x) / slider_width;
             moving_rect.setPosition(sf::Vector2f(x + slider_width * ratio, y + height / 2));
-            int new_value = (ratio >= 0.9 && max_range.second != -1) ? (max_range.first + (((ratio - 0.9) / 0.1) * (max_range.second - max_range.first))) : range.first + int((range.second - range.first) * ratio);
+            int new_value = (ratio >= MAX_RANGE_COEFF && max_range.second != -1) ? (max_range.first + (((ratio - MAX_RANGE_COEFF) / (1 - MAX_RANGE_COEFF)) * (max_range.second - max_range.first))) : range.first + int((range.second - range.first) * (ratio / (max_range.second == -1 ? 1 : MAX_RANGE_COEFF)));
             *changing_value = new_value;
             value_text.setString(std::to_string(*changing_value));
         }
@@ -1169,6 +1177,7 @@ public:
         window->draw(value_text);
         window->draw(text);
         window->draw(line);
+        if (max_range.second != -1) window->draw(max_line);
         window->draw(moving_rect);
     }
 private:
@@ -1176,12 +1185,13 @@ private:
     float slider_width;
     std::pair<int, int> range, max_range;
     int* changing_value;
+    const double MAX_RANGE_COEFF = 0.8;
 
     sf::Font font;
     sf::Text text, value_text;
     std::string text_string;
 
-    sf::RectangleShape line, rect, moving_rect;
+    sf::RectangleShape line, rect, moving_rect, max_line;
     sf::RenderWindow* window = nullptr;
     MainVector* main_vec = nullptr;
 };
