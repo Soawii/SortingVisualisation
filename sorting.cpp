@@ -19,6 +19,23 @@ int POPULATION = 100;
 int IS_ANIMATION = 0;
 
 enum class Sort { bubble, coctail_shaker, insertion, quick, merge, heap, counting, radix };
+enum class Pressable { button, slider, textbox, dropdown, checkbox };
+
+class ButtonPriority
+{
+public:
+    ButtonPriority(Pressable pressable_, void* button_ptr_, int priority_)
+    {
+        pressable = pressable_;
+        button_ptr = button_ptr_;
+        priority = priority_;
+    }
+    void* button_ptr;
+    Pressable pressable;
+    int priority = 0;
+};
+
+std::vector<ButtonPriority> all_buttons;
 
 class MainVector
 {
@@ -29,28 +46,34 @@ public:
         window = new_window;
         populate_vector(population);
 
-        info_text.setFont(font);
-        info_text.setCharacterSize(16);
-        info_text.setFillColor(sf::Color(30, 30, 30));
-        info_text.setPosition(10, 10);
-        info_text.setString(sort_info[int(sort_chosen)]);
+        info_text.resize(3);
+        stat_text.resize(3);
+        time_text.resize(3);
 
-        stat_text.setFont(font);
-        stat_text.setCharacterSize(16);
-        stat_text.setFillColor(sf::Color(30, 30, 30));
-        stat_text.setPosition(10, 10 + 18);
+        for (int i = 0; i < 3; i++)
+        {
+            info_text[i].setFont(font);
+            info_text[i].setCharacterSize(16);
+            info_text[i].setFillColor(sf::Color(30, 30, 30));
+            info_text[i].setPosition(10, 10 + i * 50);
+            info_text[i].setString(sort_info[int(sort_chosen[i])]);
 
-        time_text.setFont(font);
-        time_text.setCharacterSize(16);
-        time_text.setFillColor(sf::Color(30, 30, 30));
-        time_text.setPosition(20 + info_text.getLocalBounds().left + info_text.getLocalBounds().width, 10);
-        time_text.setString("Time: ");
+            stat_text[i].setFont(font);
+            stat_text[i].setCharacterSize(16);
+            stat_text[i].setFillColor(sf::Color(30, 30, 30));
+            stat_text[i].setPosition(10, 10 + 18 + i * 50);
+
+            time_text[i].setFont(font);
+            time_text[i].setCharacterSize(16);
+            time_text[i].setFillColor(sf::Color(30, 30, 30));
+            time_text[i].setPosition(20 + info_text[i].getLocalBounds().left + info_text[i].getLocalBounds().width, 10 + i * 50);
+            time_text[i].setString("Time: ");
+        }
 
         sound_buffer.loadFromFile("laser.wav");
 
         std::size_t start_cut = sound_buffer.getSampleCount() * 0.46, end_cut = sound_buffer.getSampleCount() * 0.5;
         trimmed_buffer.loadFromSamples(sound_buffer.getSamples() + start_cut, sound_buffer.getSampleCount() - start_cut - end_cut, sound_buffer.getChannelCount(), sound_buffer.getSampleRate());
-
 
         beep_pitches.resize(1000, 0);
         for (int i = 0; i < 1000; i++)
@@ -170,17 +193,17 @@ public:
         unstop();
     }
 
-    void set_sort(Sort new_sort)
+    void set_sort(Sort new_sort, int sort_number)
     {
         if (!((can_populate && can_sort) || stopped)) return;
-        sort_chosen = new_sort;
-        info_text.setString(sort_info[int(sort_chosen)]);
-        time_text.setPosition(20 + info_text.getLocalBounds().left + info_text.getLocalBounds().width, 10);
+        sort_chosen[sort_number] = new_sort;
+        info_text[sort_number].setString(sort_info[int(sort_chosen[sort_number])]);
+        time_text[sort_number].setPosition(20 + info_text[sort_number].getLocalBounds().left + info_text[sort_number].getLocalBounds().width, 10 + sort_number * 50);
     }
 
-    Sort get_sort() const
+    Sort get_sort(int sort_number) const
     {
-        return sort_chosen;
+        return sort_chosen[sort_number];
     }
 
     int get_size() const
@@ -190,7 +213,7 @@ public:
 
     void swap(int i, int j, bool true_sort)
     {
-        if (!IS_ANIMATION) writes += 2;
+        if (!IS_ANIMATION) writes[current_sort] += 2;
         int temp1 = main_vector[i];
         main_vector[i] = main_vector[j];
         main_vector[j] = temp1;
@@ -199,7 +222,7 @@ public:
 
     void good_swap(int i, int j, bool true_sort)
     {
-        if (!IS_ANIMATION) writes += 2;
+        if (!IS_ANIMATION) writes[current_sort] += 2;
         swap(i, new_idxs[j], true_sort);
         for (int k = 0; k < main_vector.size(); k++)
         {
@@ -244,22 +267,29 @@ public:
     void set(int source, int value, bool true_sort)
     {
         main_vector[source] = orig_main_vector[value];
-        if (!IS_ANIMATION) writes++;
+        if (!IS_ANIMATION) writes[current_sort]++;
         if (!true_sort) changes.push_back({ source, value, 2 });
     }
 
     void set_value(int idx, int value, bool true_sort)
     {
         main_vector[idx] = value;
-        if (!IS_ANIMATION) writes++;
+        if (!IS_ANIMATION) writes[current_sort]++;
         if (!true_sort) changes.push_back({ idx, idx, 2 });
     }
 
     bool compare(int i, int j, bool (*cmp)(int, int), bool true_sort)
     {
         if (!true_sort) changes.push_back({ i, j, 0 });
-        if (!IS_ANIMATION) comparisons++;
+        if (!IS_ANIMATION) comparisons[current_sort]++;
         return cmp(main_vector[i], main_vector[j]);
+    }
+
+    bool orig_compare(int i, int j, bool (*cmp)(int, int), bool true_sort)
+    {
+        if (!true_sort) changes.push_back({ i, j, 0 });
+        if (!IS_ANIMATION) comparisons[current_sort]++;
+        return cmp(orig_main_vector[i], orig_main_vector[j]);
     }
 
     bool is_stopped() const
@@ -281,11 +311,6 @@ public:
 
     void draw()
     {
-        stat_text.setString("Comparisons: " + std::to_string(comparisons) + "   Writes: " + std::to_string(writes));
-        window->draw(stat_text);
-        window->draw(info_text);
-        window->draw(time_text);
-
         int min_sound = 1000000000, max_sound = -1;
         double avg = 0;
         int cnt = 0;
@@ -324,16 +349,16 @@ public:
                 int i_idx = (i * add), j_idx = (j * add);
                 if (changes[idx][2] == 0)
                 {
-                    comparisons++;
+                    comparisons[current_sort]++;
                 }
                 if (changes[idx][2] == 1)
                 {
-                    writes += 2;
+                    writes[current_sort] += 2;
                     swap_rectangles(i, j);
                 }
                 if (changes[idx][2] == 2)
                 {
-                    writes++;
+                    writes[current_sort]++;
                     if (vertices_used)
                     {
                         if (vertex_vector.getPrimitiveType() == sf::Lines)
@@ -466,6 +491,14 @@ public:
             }
         }
 
+        for (int i = 0; i < (IS_ANIMATION ? 1 : 3); i++)
+        {
+            stat_text[i].setString("Comparisons: " + std::to_string(comparisons[i]) + "   Writes: " + std::to_string(writes[i]));
+            window->draw(stat_text[i]);
+            window->draw(info_text[i]);
+            window->draw(time_text[i]);
+        }
+
         while (!sound_deque.empty() && sound_deque.front()->getStatus() == sf::Sound::Stopped)
         {
             delete sound_deque.front();
@@ -488,32 +521,37 @@ public:
     {
         if (IS_ANIMATION)
         {
-            if (main_vector.size() > sort_to_max_limited[int(sort_chosen)]) populate_vector(sort_to_max_limited[int(sort_chosen)]);
+            if (main_vector.size() > sort_to_max_limited[int(sort_chosen[0])]) populate_vector(sort_to_max_limited[int(sort_chosen[0])]);
             else repopulate_vector();
         }
         else
         {
-            if (main_vector.size() > sort_to_max_unlimited[int(sort_chosen)]) populate_vector(sort_to_max_unlimited[int(sort_chosen)]);
+            int min_max_element = std::min({ sort_to_max_unlimited[int(sort_chosen[0])], sort_to_max_unlimited[int(sort_chosen[1])] , sort_to_max_unlimited[int(sort_chosen[2])] });
+            if (main_vector.size() > min_max_element) populate_vector(min_max_element);
             else repopulate_vector();
         }
-        sf::Clock clock;
-        comparisons = 0;
-        writes = 0;
+        for (int i = 0; i < (IS_ANIMATION ? 1 : 3); i++)
+        {
+            current_sort = i;
+            repopulate_vector();
+            sf::Clock clock;
+            comparisons[i] = 0;
+            writes[i] = 0;
 
-        int start = clock.getElapsedTime().asMilliseconds();
+            int start = clock.getElapsedTime().asMilliseconds();
 
-        if (sort_chosen == Sort::bubble) bubble_sort(true);
-        else if (sort_chosen == Sort::coctail_shaker) coctail_shaker_sort(true);
-        else if (sort_chosen == Sort::insertion) insertion_sort(true);
-        else if (sort_chosen == Sort::quick) quick_sort(true);
-        else if (sort_chosen == Sort::merge) merge_sort(true);
-        else if (sort_chosen == Sort::heap) heap_sort(true);
-        else if (sort_chosen == Sort::counting) counting_sort(true);
-        else if (sort_chosen == Sort::radix) radix_sort(true);
+            if (sort_chosen[i] == Sort::bubble) bubble_sort(true);
+            else if (sort_chosen[i] == Sort::coctail_shaker) coctail_shaker_sort(true);
+            else if (sort_chosen[i] == Sort::insertion) insertion_sort(true);
+            else if (sort_chosen[i] == Sort::quick) quick_sort(true);
+            else if (sort_chosen[i] == Sort::merge) merge_sort(true);
+            else if (sort_chosen[i] == Sort::heap) heap_sort(true);
+            else if (sort_chosen[i] == Sort::counting) counting_sort(true);
+            else if (sort_chosen[i] == Sort::radix) radix_sort(true);
 
-        int end = clock.getElapsedTime().asMilliseconds();
-        time_text.setString("Time: " + std::to_string(end - start) + " ms.");
-
+            int end = clock.getElapsedTime().asMilliseconds();
+            time_text[i].setString("Time: " + std::to_string(end - start) + " ms.");
+        }
         if (IS_ANIMATION)
         {
             repopulate_vector();
@@ -521,14 +559,14 @@ public:
             can_sort = false;
             can_populate = false;
 
-            if (sort_chosen == Sort::bubble) bubble_sort();
-            else if (sort_chosen == Sort::coctail_shaker) coctail_shaker_sort();
-            else if (sort_chosen == Sort::insertion) insertion_sort();
-            else if (sort_chosen == Sort::quick) quick_sort();
-            else if (sort_chosen == Sort::merge) merge_sort();
-            else if (sort_chosen == Sort::heap) heap_sort();
-            else if (sort_chosen == Sort::counting) counting_sort();
-            else if (sort_chosen == Sort::radix) radix_sort();
+            if (sort_chosen[0] == Sort::bubble) bubble_sort();
+            else if (sort_chosen[0] == Sort::coctail_shaker) coctail_shaker_sort();
+            else if (sort_chosen[0] == Sort::insertion) insertion_sort();
+            else if (sort_chosen[0] == Sort::quick) quick_sort();
+            else if (sort_chosen[0] == Sort::merge) merge_sort();
+            else if (sort_chosen[0] == Sort::heap) heap_sort();
+            else if (sort_chosen[0] == Sort::counting) counting_sort();
+            else if (sort_chosen[0] == Sort::radix) radix_sort();
         }
         else
         {
@@ -689,7 +727,7 @@ public:
         else
         {
             idx = left;
-            if (!IS_ANIMATION) writes += 2 * arr.size();
+            if (!IS_ANIMATION) writes[current_sort] += 2 * arr.size();
             for (int i = 0; i < arr.size(); i++) main_vector[idx++] = arr[i];
         }
     }
@@ -697,140 +735,67 @@ public:
     struct HeapNode
     {
         int idx = 0;
+        int amount = 1;
         HeapNode* parent = nullptr, * left = nullptr, * right = nullptr;
     };
     int current_tree_idx = 0;
-    void build_complete_tree(HeapNode* head, bool true_sort)
-    {
-        if (head->idx * 2 + 1 < main_vector.size())
-        {
-            if (head->left == nullptr) head->left = new HeapNode();
-            head->left->parent = head;
-            head->left->idx = head->idx * 2 + 1;
-            compare(head->idx, head->left->idx, [](int a, int b) {return a < b; }, true_sort);
-            build_complete_tree(head->left, true_sort);
 
-        }
-        if (head->idx * 2 + 2 < main_vector.size())
-        {
-            if (head->right == nullptr) head->right = new HeapNode();
-            head->right->parent = head;
-            head->right->idx = head->idx * 2 + 2;
-            compare(head->idx, head->right->idx, [](int a, int b) {return a < b; }, true_sort);
-            build_complete_tree(head->right, true_sort);
-        }
-    }
-    void heapify(HeapNode* head)
+    void insert_element_into_heap(HeapNode* head, int idx, bool true_sort)
     {
-        if (head == nullptr) return;
-        heapify(head->left);
-        heapify(head->right);
-        if (head->parent != nullptr && orig_main_vector[head->idx] > orig_main_vector[head->parent->idx])
+        if (orig_compare(idx, head->idx, [](int a, int b) {return a < b; }, true_sort))
         {
-            int temp = head->idx;
-            head->idx = head->parent->idx;
-            head->parent->idx = temp;
-        }
-    }
-    int find_a_leaf(HeapNode* head)
-    {
-        if (head == nullptr) return -1;
-        if (head->right != nullptr) return find_a_leaf(head->right);
-        else if (head->left != nullptr) return find_a_leaf(head->left);
-        else
-        {
-            if (head->parent != nullptr)
+            if (head->left == nullptr)
             {
-                if (head->parent->right != nullptr) head->parent->right = nullptr;
-                else head->parent->left = nullptr;
+                head->left = new HeapNode;
+                head->left->idx = idx;
             }
-            int idx = head->idx;
-            delete head;
-            return idx;
+            else insert_element_into_heap(head->left, idx, true_sort);
         }
-    }
-    void fill_array(HeapNode* head, std::vector<std::vector<int>>& arr, int level = 1)
-    {
-        if (head == nullptr) return;
-        if (arr.size() < level) arr.push_back({});
-        arr[level - 1].push_back(head->idx);
-        
-        fill_array(head->left, arr, level + 1);
-        fill_array(head->right, arr, level + 1);
+        else if (orig_compare(idx, head->idx, [](int a, int b) {return a > b; }, true_sort))
+        {
+            if (head->right == nullptr)
+            {
+                head->right = new HeapNode;
+                head->right->idx = idx;
+            }
+            else insert_element_into_heap(head->right, idx, true_sort);
+        }
+        else head->amount++;
     }
     void heap_sort(bool true_sort = false)
     {
         HeapNode* head = new HeapNode;
-
-        int max_num = 0, max_num_idx = -1;
-        for (int i = 0; i < main_vector.size(); i++)
-        {
-            if (main_vector[i] > max_num)
-            {
-                max_num = main_vector[i];
-                max_num_idx = i;
-            }
-        }
-        head->idx = max_num_idx;
-
         head->right = new HeapNode;
         head->right->idx = 0;
-        head->right->parent = head;
-
-        current_tree_idx = 0;
-        build_complete_tree(head->right, true_sort);
-
-        heapify(head->right);
-        std::vector<std::vector<int>> arr;
-        int idx;
-        if (!true_sort)
+        for (int i = 1; i < orig_main_vector.size(); i++)
         {
-            fill_array(head->right, arr);
-            idx = 0;
-            for (int i = 0; i < arr.size(); i++)
-            {
-                for (int j = 0; j < arr[i].size(); j++)
-                {
-                    good_swap(idx, arr[i][j], true_sort);
-                    idx++;
-                }
-            }
+            insert_element_into_heap(head->right, i, true_sort);
         }
-
-        idx = main_vector.size() - 1;
-        while (head->right != nullptr)
+        int idx = orig_main_vector.size() - 1;
+        while (head->right != nullptr && idx >= 0)
         {
-            if (!true_sort)
+            HeapNode* temp = head;
+            while (temp->right != nullptr && temp->right->right != nullptr)
             {
-                swap(idx, new_idxs[head->right->idx], true_sort);
-                for (int i = 0; i < main_vector.size(); i++)
-                {
-                    if (new_idxs[i] == idx)
-                    {
-                        new_idxs[i] = new_idxs[head->right->idx];
-                        new_idxs[head->right->idx] = idx;
-                        break;
-                    }
-                }
-                compare(idx, new_idxs[head->right->idx], [](int a, int b) {return a < b; }, true_sort);
+                temp = temp->right;
             }
-            else
-            {
-                main_vector[idx] = orig_main_vector[head->right->idx];
-                if (!IS_ANIMATION) writes++;
-            }
+            set(idx, temp->right->idx, true_sort);
             idx--;
-            int new_idx = find_a_leaf(head->right);
-            if (head->right == nullptr) break;
-            head->right->idx = new_idx;
-            heapify(head->right);
+            temp->right->amount--;
+            if (temp->right->amount == 0)
+            {
+                HeapNode* temp_left = temp->right->left;
+                delete temp->right;
+                temp->right = temp_left;
+            }
         }
     }
+
 
     void counting_sort(bool true_sort = false)
     {
         std::vector<std::pair<int, int>> arr(MAX_ELEMENT + 1, std::pair<int, int>(0, 0));
-        writes += MAX_ELEMENT;
+        writes[current_sort] += MAX_ELEMENT;
         for (int i = 0; i < size; i++)
         {
             arr[main_vector[i]].first++;
@@ -850,8 +815,8 @@ public:
 
     void radix_sort(bool true_sort = false)
     {
-        int max_element = 0, max_element_idx = 0;
-        for (int i = 0; i < main_vector.size(); i++)
+        int max_element = main_vector[0], max_element_idx = 0;
+        for (int i = 1; i < main_vector.size(); i++)
         {
             if (compare(i, max_element_idx, [](int a, int b) {return a > b; }, true_sort))
             {
@@ -859,8 +824,10 @@ public:
                 max_element_idx = i;
             }
         }
+
         int iterations = int(log10(max_element)) + 1;
         int divisor = 1;
+
         for (int iteration = 0; iteration < iterations; iteration++)
         {
             std::vector<std::vector<int>> counting_arr(10, std::vector<int>());
@@ -885,9 +852,10 @@ public:
 
     int MAX_ELEMENT = 1000;
     bool done_phase = false, can_sort = true, can_populate = true, sorted = false, stopped = false;
-    std::vector<int> sort_to_max_limited = { 2000, 2000, 2000, 10000, 10000, 10000, 20000, 20000};
-    std::vector<int> sort_to_max_unlimited = { 40000, 40000, 40000, 500000, 500000, 40000, 500000, 500000 };
-    Sort sort_chosen = Sort::bubble;
+    std::vector<int> sort_to_max_limited = { 2000, 2000, 2000, 10000, 10000, 10000, 20000, 20000 };
+    std::vector<int> sort_to_max_unlimited = { 40000, 40000, 40000, 1000000, 1000000, 1000000, 1000000, 1000000 };
+    std::vector<Sort> sort_chosen = { Sort::bubble, Sort::insertion, Sort::quick };
+    int current_sort = 0;
 private:
     bool vertices_used = false;
     sf::RenderWindow* window;
@@ -902,24 +870,23 @@ private:
     double element_width;
     int size;
     int milliseconds_to_sort = -1;
-    
+
     sf::SoundBuffer sound_buffer;
     sf::SoundBuffer trimmed_buffer;
     std::vector<float> beep_pitches;
     std::deque<sf::Sound*> sound_deque;
 
-    sf::Text info_text, stat_text, time_text;
+    std::vector<sf::Text> info_text, stat_text, time_text;
     sf::Font font;
-    int comparisons = 0;
-    int writes = 0;
+    std::vector<int> comparisons = { 0, 0, 0 }, writes = {0, 0, 0};
     std::vector<std::string> sort_info = { "Bubble Sort",
                                             "Shaker Sort",
                                             "Insertion Sort",
                                             "Quick Sort",
                                             "Merge Sort",
                                             "Heap Sort",
-                                            "Counting Sort", 
-                                            "Radix Sort"};
+                                            "Counting Sort",
+                                            "Radix Sort" };
 };
 
 
@@ -927,8 +894,9 @@ class Button
 {
 public:
     Button() {}
-    Button(float x_, float y_, float width_, float height_, std::string text_, sf::RenderWindow* window_, MainVector* main_vec_, bool holdable_ = true, Button* parent_ = nullptr, bool unpress_on_press_ = false, bool is_pressable_when_sorting_ = true, sf::Color NEW_NORMAL_COLOR = sf::Color::Transparent, sf::Color NEW_HOVERED_COLOR = sf::Color::Transparent, sf::Color NEW_PRESSED_COLOR = sf::Color::Transparent) : x(x_), y(y_), width(width_), height(height_), holdable(holdable_), text_string(text_)
+    Button(float x_, float y_, float width_, float height_, std::string text_, sf::RenderWindow* window_, MainVector* main_vec_, bool push_to_vector, bool holdable_ = true, Button* parent_ = nullptr, bool unpress_on_press_ = false, bool is_pressable_when_sorting_ = true, int priority_ = 0, bool enabled_ = true, sf::Color NEW_NORMAL_COLOR = sf::Color::Transparent, sf::Color NEW_HOVERED_COLOR = sf::Color::Transparent, sf::Color NEW_PRESSED_COLOR = sf::Color::Transparent) : x(x_), y(y_), width(width_), height(height_), holdable(holdable_), text_string(text_), start_text(text_)
     {
+        if (push_to_vector) all_buttons.push_back(ButtonPriority(Pressable::button, (void*)this, priority_));
         if (NEW_NORMAL_COLOR != sf::Color::Transparent)
         {
             NORMAL_BUTTON_COLOR = NEW_NORMAL_COLOR;
@@ -960,14 +928,15 @@ public:
         parent = parent_;
         unpress_on_press = unpress_on_press_;
         is_pressable_when_sorting = is_pressable_when_sorting_;
+        enabled = enabled_;
     }
     bool is_pressed() const
     {
         return pressed;
     }
-    void press()
+    bool press()
     {
-        if (!is_pressable_when_sorting and !main_vec->can_sort) return;
+        if (!is_pressable_when_sorting and !main_vec->can_sort) return false;
         pressed = true;
         rect.setFillColor(PRESSED_BUTTON_COLOR);
 
@@ -975,7 +944,8 @@ public:
         {
             if (!holdable && string_to_sort[i].first == text_string)
             {
-                main_vec->set_sort(string_to_sort[i].second);
+                int sort_number = parent->start_text == "BUBBLE" ? 0 : (parent->start_text == "INSERTION" ? 1 : 2);
+                main_vec->set_sort(string_to_sort[i].second, sort_number);
                 parent->set_string(text_string);
                 break;
             }
@@ -993,13 +963,16 @@ public:
             else main_vec->stop();
         }
         if (!holdable) unpress();
+        return true;
     }
 
-    void unpress()
+    bool unpress()
     {
         pressed = false;
         rect.setFillColor(HOVERED_BUTTON_COLOR);
+        return true;
     }
+
     void set_string(std::string new_string)
     {
         text_string = new_string;
@@ -1014,16 +987,17 @@ public:
         text.setOrigin(text_rect.getSize().x / 2, text_rect.getSize().y / 2);
         text.setPosition(sf::Vector2f(x + width / 2, y + height / 2 - 7));
     }
-    void update(sf::Vector2i mouse_pos, bool mouse_pressed)
+    bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
+        if (!enabled) return false;
         if (rect.getGlobalBounds().contains(sf::Vector2f(mouse_pos.x, mouse_pos.y)))
         {
             hovered = true;
             if (rect.getFillColor() == NORMAL_BUTTON_COLOR) rect.setFillColor(HOVERED_BUTTON_COLOR);
             if (mouse_pressed)
             {
-                if (pressed) unpress();
-                else press();
+                if (pressed) return unpress();
+                else return press();
             }
         }
         else
@@ -1032,12 +1006,15 @@ public:
             hovered = false;
             if (rect.getFillColor() == HOVERED_BUTTON_COLOR) rect.setFillColor(NORMAL_BUTTON_COLOR);
         }
+        return false;
     }
     void draw()
     {
+        if (!enabled) return;
         window->draw(rect);
         window->draw(text);
     }
+    bool enabled = true;
 protected:
     float x = 0, y = 0;
     float width = 0, height = 0;
@@ -1050,6 +1027,7 @@ protected:
     sf::Font font;
     sf::Text text;
     std::string text_string;
+    std::string start_text;
 
     bool hovered = false, pressed = false, holdable = true, unpress_on_press = false;
     bool is_pressable_when_sorting = true;
@@ -1065,7 +1043,7 @@ protected:
                                                                 {"MERGE", Sort::merge},
                                                                 {"HEAP", Sort::heap},
                                                                 {"COUNTING", Sort::counting},
-                                                                { "RADIX", Sort::radix }};
+                                                                { "RADIX", Sort::radix } };
 };
 
 class DropDownButton
@@ -1073,32 +1051,53 @@ class DropDownButton
 public:
     DropDownButton(float x_, float y_, float width_, float height_, std::string text_, std::vector<std::string> choices_, sf::RenderWindow* window_, MainVector* main_vec_)
     {
-        head = new Button(x_, y_, width_, height_, text_, window_, main_vec_, true, nullptr, true, false);
+        all_buttons.push_back(ButtonPriority(Pressable::dropdown, (void*)this, 0));
+        head = new Button(x_, y_, width_, height_, text_, window_, main_vec_, false, true, nullptr, true, false);
         float current_x = x_, current_y = y_ + height_;
         choices.resize(choices_.size(), nullptr);
         for (int i = 0; i < choices.size(); i++)
         {
-            choices[i] = new Button(current_x, current_y, width_, height_ * 0.8, choices_[i], window_, main_vec_, false, head);
+            choices[i] = new Button(current_x, current_y, width_, height_ * 0.8, choices_[i], window_, main_vec_, false, false, head, false, false, 1, false);
             current_y += height_ * 0.8;
         }
     }
-    void update(sf::Vector2i mouse_pos, bool mouse_pressed)
+    bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
+        if (!head->enabled) return false;
+        bool ans = false;
         if (head->is_pressed())
         {
             for (int i = 0; i < choices.size(); i++)
-                choices[i]->update(mouse_pos, mouse_pressed);
+            {
+                choices[i]->enabled = true;
+                if (choices[i]->update(mouse_pos, mouse_pressed))
+                {
+                    ans = true;
+                    break;
+                }
+            }
         }
-        head->update(mouse_pos, mouse_pressed);
+        if (head->update(mouse_pos, mouse_pressed)) ans = true;
+        return ans;
     }
     void draw()
     {
+        if (!head->enabled) return;
         head->draw();
         if (head->is_pressed())
         {
             for (int i = 0; i < choices.size(); i++)
                 choices[i]->draw();
         }
+    }
+    void enable()
+    {
+        head->enabled = true;
+    }
+    void disable()
+    {
+        head->enabled = false;
+        head->unpress();
     }
 private:
     Button* head = nullptr;
@@ -1108,8 +1107,9 @@ private:
 class Slider
 {
 public:
-    Slider(float x_, float y_, float width_, float height_, std::string text_, std::pair<int, int> range_, int* changing_value_, sf::RenderWindow* window_, MainVector* main_vec_, std::pair<int, int> max_range_ = {-1, -1}) : x(x_), y(y_), width(width_), height(height_), text_string(text_), range(range_), max_range(max_range_)
+    Slider(float x_, float y_, float width_, float height_, std::string text_, std::pair<int, int> range_, int* changing_value_, sf::RenderWindow* window_, MainVector* main_vec_, std::pair<int, int> max_range_ = { -1, -1 }) : x(x_), y(y_), width(width_), height(height_), text_string(text_), range(range_), max_range(max_range_)
     {
+        all_buttons.push_back(ButtonPriority(Pressable::slider, (void*)this, 0));
         window = window_;
         main_vec = main_vec_;
         changing_value = changing_value_;
@@ -1152,9 +1152,9 @@ public:
         value_text.setOrigin(0, text_rect.getSize().y / 2);
         value_text.setPosition(sf::Vector2f(x + slider_width + 6, y + height / 2 - 10));
     }
-    void update(sf::Vector2i mouse_pos, bool mouse_pressed)
+    bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
-        if (!mouse_pressed) return;
+        if (!mouse_pressed) return false;
         if (rect.getGlobalBounds().contains(sf::Vector2f(mouse_pos.x, mouse_pos.y)))
         {
             double ratio = (mouse_pos.x - x) / slider_width;
@@ -1162,7 +1162,9 @@ public:
             int new_value = (ratio >= MAX_RANGE_COEFF && max_range.second != -1) ? (max_range.first + (((ratio - MAX_RANGE_COEFF) / (1 - MAX_RANGE_COEFF)) * (max_range.second - max_range.first))) : range.first + int((range.second - range.first) * (ratio / (max_range.second == -1 ? 1 : MAX_RANGE_COEFF)));
             *changing_value = new_value;
             value_text.setString(std::to_string(*changing_value));
+            return true;
         }
+        return false;
     }
     void set(int val)
     {
@@ -1202,6 +1204,7 @@ class TextWindow
 public:
     TextWindow(float x_, float y_, float width_, float height_, std::string name_, std::vector<std::string> texts, std::vector<std::pair<int, int>> ranges_, std::vector<int> values_, sf::RenderWindow* window_, MainVector* main_vec_, int button_amount = 1) : x(x_), y(y_), width(width_), height(height_)
     {
+        all_buttons.push_back(ButtonPriority(Pressable::textbox, (void*)this, 0));
         name = name_;
         font.loadFromFile("regular.ttf");
 
@@ -1209,12 +1212,12 @@ public:
         main_vec = main_vec_;
         ranges = ranges_;
         values = values_;
-        set_button = new Button(x, y + height + 2, width, height / 2, "SET", window, main_vec, true);
+        set_button = new Button(x, y + height + 2, width, height / 2, "SET", window, main_vec, false, false);
 
         main_buttons.resize(button_amount, nullptr);
         for (int i = 0; i < button_amount; i++)
         {
-            main_buttons[i] = new Button(x + (i * width / button_amount), y, width / button_amount, height, std::to_string(values[i]), window, main_vec, true, nullptr, true, true, sf::Color(220, 220, 220), sf::Color(190, 190, 190), sf::Color(160, 160, 160));
+            main_buttons[i] = new Button(x + (i * width / button_amount), y, width / button_amount, height, std::to_string(values[i]), window, main_vec, false, true, nullptr, true, true, 0, true, sf::Color(220, 220, 220), sf::Color(190, 190, 190), sf::Color(160, 160, 160));
         }
 
         info_text.resize(button_amount);
@@ -1230,24 +1233,23 @@ public:
         }
     }
 
-    void update(sf::Vector2i mouse_pos, bool mouse_pressed, sf::Keyboard::Scan::Scancode key_pressed = sf::Keyboard::Scan::Unknown)
+    bool update(sf::Vector2i mouse_pos, bool mouse_pressed, sf::Keyboard::Scan::Scancode key_pressed = sf::Keyboard::Scan::Unknown)
     {
+        bool ans = false;
         for (int i = 0; i < main_buttons.size(); i++)
         {
-            main_buttons[i]->update(mouse_pos, mouse_pressed);
+            if (main_buttons[i]->update(mouse_pos, mouse_pressed)) ans = true;
         }
 
-        set_button->update(mouse_pos, mouse_pressed);
-
-        if (set_button->is_pressed())
+        if (set_button->update(mouse_pos, mouse_pressed))
         {
+            ans = true;
             if (name == "SETTINGS")
             {
                 POPULATION = std::max(ranges[0].first, values[0]);
                 main_vec->MAX_ELEMENT = std::max(ranges[1].first, values[1]);
                 main_vec->populate_vector(POPULATION);
             }
-            set_button->unpress();
         }
 
         for (int i = 0; i < main_buttons.size(); i++)
@@ -1270,16 +1272,18 @@ public:
             {
                 if (IS_ANIMATION)
                 {
-                    if (values[0] > main_vec->sort_to_max_limited[int(main_vec->sort_chosen)]) values[0] = main_vec->sort_to_max_limited[int(main_vec->sort_chosen)];
+                    if (values[0] > main_vec->sort_to_max_limited[int(main_vec->sort_chosen[0])]) values[0] = main_vec->sort_to_max_limited[int(main_vec->sort_chosen[0])];
                 }
                 else
                 {
-                    if (values[0] > main_vec->sort_to_max_unlimited[int(main_vec->sort_chosen)]) values[0] = main_vec->sort_to_max_unlimited[int(main_vec->sort_chosen)];
+                    int min_max_size = std::min({ main_vec->sort_to_max_unlimited[int(main_vec->sort_chosen[0])], main_vec->sort_to_max_unlimited[int(main_vec->sort_chosen[1])] , main_vec->sort_to_max_unlimited[int(main_vec->sort_chosen[2])] });
+                    if (values[0] > min_max_size) values[0] = min_max_size;
                 }
                 if (values[1] > ranges[1].second) values[1] = ranges[1].second;
             }
             main_buttons[i]->set_string(std::to_string(values[i]));
         }
+        return ans;
     }
 
     void draw()
@@ -1313,36 +1317,53 @@ protected:
 class CheckBox
 {
 public:
-    CheckBox(float x, float y, float width, std::string text_, int* changing_value_, std::pair<int, int> set_values_, bool default_state, sf::RenderWindow* window_, MainVector* main_vec_)
+    CheckBox(float x, float y, float width, std::vector<std::string> text_, int* changing_value_, std::pair<int, int> set_values_, bool default_state, sf::RenderWindow* window_, MainVector* main_vec_)
     {
+        all_buttons.push_back(ButtonPriority(Pressable::checkbox, (void*)this, 0));
         main_vec = main_vec_;
         set_values = set_values_;
         changing_value = changing_value_;
         window = window_;
+        text_vector = text_;
 
-        check_button = new Button(x, y, width, width, "", window_, main_vec_, true, nullptr, false, true, sf::Color(240, 240, 240), sf::Color(200, 255, 200), sf::Color(30, 255, 30));
-        if (default_state) check_button->press();
-
+        check_button = new Button(x, y, width, width, "", window_, main_vec_, false, true, nullptr, false, true, 0, true, sf::Color(240, 240, 240), sf::Color(200, 255, 200), sf::Color(30, 255, 30));
+        if (default_state)
+        {
+            check_button->press();
+            *changing_value = set_values_.second;
+        }
         font.loadFromFile("regular.ttf");
         text.setFont(font);
-        text.setString(text_);
+        text.setString(text_vector[int(default_state)]);
         text.setCharacterSize(16);
         text.setFillColor(sf::Color(30, 30, 30));
         sf::FloatRect text_rect = text.getLocalBounds();
-        text.setOrigin(text_rect.getSize().x, text_rect.getSize().y / 2);
-        text.setPosition(sf::Vector2f(x - 40, y + width / 2 - 5));
+        text.setOrigin(0, text_rect.getSize().y / 2);
+        text.setPosition(sf::Vector2f(SORT_WIDTH + 10, y + width / 2 - 5));
     }
     void draw()
     {
         window->draw(text);
         check_button->draw();
     }
-    void update(sf::Vector2i mouse_pos, bool mouse_pressed)
+    bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
-        if (!main_vec->can_sort) return;
-        check_button->update(mouse_pos, mouse_pressed);
-        if (check_button->is_pressed()) *changing_value = set_values.second;
-        else *changing_value = set_values.first;
+        if (!main_vec->can_sort) return false;
+        bool ans = check_button->update(mouse_pos, mouse_pressed);
+        if (ans)
+        {
+            if (check_button->is_pressed())
+            {
+                *changing_value = set_values.second;
+                text.setString(text_vector[1]);
+            }
+            else
+            {
+                *changing_value = set_values.first;
+                text.setString(text_vector[0]);
+            }
+        }
+        return ans;
     }
 private:
     sf::RenderWindow* window;
@@ -1352,6 +1373,7 @@ private:
     Button* check_button;
     int* changing_value;
     std::pair<int, int> set_values;
+    std::vector<std::string> text_vector;
 };
 
 int main()
@@ -1371,21 +1393,37 @@ int main()
 
     POPULATION = 100;
     MainVector vec(POPULATION, &window);
-    vec.set_sort(Sort::bubble);
 
-    Button start_button(SORT_WIDTH + 12, HEIGHT - 70, (WIDTH - SORT_WIDTH) - 20, 60, "START", &window, &vec, false);
-    Button stop_button(SORT_WIDTH + 12, HEIGHT - 110, (WIDTH - SORT_WIDTH) - 20, 30, "STOP", &window, &vec, false);
-    DropDownButton sort_choice_button(SORT_WIDTH + 12, 10, (WIDTH - SORT_WIDTH) - 20, 50, "SORT CHOICE", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX"}, &window, &vec);
-    Slider animation_speed_slider(SORT_WIDTH + 12, HEIGHT - 260, (WIDTH - SORT_WIDTH) - 20, 40, "ANIM. SPEED", { 1, 100 }, &ACTIONS_PER_FRAME, &window, &vec, {100, 1000});
+    Button start_button(SORT_WIDTH + 12, HEIGHT - 70, (WIDTH - SORT_WIDTH) - 20, 60, "START", &window, &vec, true, false);
+    Button stop_button(SORT_WIDTH + 12, HEIGHT - 110, (WIDTH - SORT_WIDTH) - 20, 30, "STOP", &window, &vec, true, false);
+
+    DropDownButton sort_choice_button1(SORT_WIDTH + 12, 10, (WIDTH - SORT_WIDTH) - 20, 50, "BUBBLE", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+    DropDownButton sort_choice_button2(SORT_WIDTH + 12, 70, (WIDTH - SORT_WIDTH) - 20, 50, "INSERTION", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+    DropDownButton sort_choice_button3(SORT_WIDTH + 12, 130, (WIDTH - SORT_WIDTH) - 20, 50, "QUICK", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+
+    Slider animation_speed_slider(SORT_WIDTH + 12, HEIGHT - 260, (WIDTH - SORT_WIDTH) - 20, 40, "ANIM. SPEED", { 1, 100 }, &ACTIONS_PER_FRAME, &window, &vec, { 100, 1000 });
     Slider sound_slider(SORT_WIDTH + 12, HEIGHT - 320, (WIDTH - SORT_WIDTH) - 20, 40, "SOUND", { 0, 100 }, &SOUND_COEFF, &window, &vec);
-    CheckBox animate_checkbox(WIDTH - 30, HEIGHT - 370, 20, "ANIMATE?", &IS_ANIMATION, { 0, 1 }, true, &window, &vec);
     animation_speed_slider.set(ACTIONS_PER_FRAME);
     sound_slider.set(SOUND_COEFF);
 
-    TextWindow population_window(SORT_WIDTH + 12, HEIGHT - 190, (WIDTH - SORT_WIDTH) - 20, 40, "SETTINGS", { "SIZE", "MAX" }, { { 5, 2000 }, {2, 100000000} }, {POPULATION, vec.MAX_ELEMENT}, &window, &vec, 2);
+    CheckBox animate_checkbox(WIDTH - 30, HEIGHT - 370, 20, { "COMPARE MODE", "ANIMATE MODE"}, &IS_ANIMATION, {0, 1}, true, &window, &vec);
+
+    TextWindow population_window(SORT_WIDTH + 12, HEIGHT - 190, (WIDTH - SORT_WIDTH) - 20, 40, "SETTINGS", { "SIZE", "MAX" }, { { 5, 2000 }, {2, 100000000} }, { POPULATION, vec.MAX_ELEMENT }, &window, &vec, 2);
+
+    sort(all_buttons.begin(), all_buttons.end(), [](ButtonPriority& left, ButtonPriority& right) {return left.priority > right.priority; });
 
     while (window.isOpen())
     {
+        if (IS_ANIMATION)
+        {
+            sort_choice_button2.disable();
+            sort_choice_button3.disable();
+        }
+        else
+        {
+            sort_choice_button2.enable();
+            sort_choice_button3.enable();
+        }
         sf::Event event;
         bool mouse_pressed_this_frame = false, mouse_pressed = false;
         sf::Keyboard::Scan::Scancode key_pressed = sf::Keyboard::Scan::Unknown;
@@ -1406,28 +1444,68 @@ int main()
 
         sf::Vector2i mouse_pos = sf::Mouse::getPosition(window);
 
-        start_button.update(mouse_pos, mouse_pressed_this_frame);
-        stop_button.update(mouse_pos, mouse_pressed_this_frame);
-
-        sort_choice_button.update(mouse_pos, mouse_pressed_this_frame);
-
-        animation_speed_slider.update(mouse_pos, mouse_pressed);
-        sound_slider.update(mouse_pos, mouse_pressed);
-
-        animate_checkbox.update(mouse_pos, mouse_pressed_this_frame);
-        population_window.update(mouse_pos, mouse_pressed_this_frame, key_pressed);
+        for (int i = 0; i < all_buttons.size(); i++)
+        {
+            if (all_buttons[i].pressable == Pressable::button)
+            {
+                Button* temp_ptr = (Button*)all_buttons[i].button_ptr;
+                if (temp_ptr->update(mouse_pos, mouse_pressed_this_frame)) break;
+            }
+            else if (all_buttons[i].pressable == Pressable::slider)
+            {
+                Slider* temp_ptr = (Slider*)all_buttons[i].button_ptr;
+                if (temp_ptr->update(mouse_pos, mouse_pressed)) break;
+            }
+            else if (all_buttons[i].pressable == Pressable::dropdown)
+            {
+                DropDownButton* temp_ptr = (DropDownButton*)all_buttons[i].button_ptr;
+                if (temp_ptr->update(mouse_pos, mouse_pressed_this_frame)) break;
+            }
+            else if (all_buttons[i].pressable == Pressable::checkbox)
+            {
+                CheckBox* temp_ptr = (CheckBox*)all_buttons[i].button_ptr;
+                if (temp_ptr->update(mouse_pos, mouse_pressed_this_frame)) break;
+            }
+            else if (all_buttons[i].pressable == Pressable::textbox)
+            {
+                TextWindow* temp_ptr = (TextWindow*)all_buttons[i].button_ptr;
+                if (temp_ptr->update(mouse_pos, mouse_pressed_this_frame, key_pressed)) break;
+            }
+        }
 
         window.clear(BACKGROUND_COLOR);
         window.draw(menu_rect);
 
         vec.draw();
-        start_button.draw();
-        stop_button.draw();
-        sort_choice_button.draw();
-        animation_speed_slider.draw();
-        population_window.draw();
-        sound_slider.draw();
-        animate_checkbox.draw();
+
+        for (int i = all_buttons.size() - 1; i >= 0; i--)
+        {
+            if (all_buttons[i].pressable == Pressable::button)
+            {
+                Button* temp_ptr = (Button*)all_buttons[i].button_ptr;
+                temp_ptr->draw();
+            }
+            else if (all_buttons[i].pressable == Pressable::slider)
+            {
+                Slider* temp_ptr = (Slider*)all_buttons[i].button_ptr;
+                temp_ptr->draw();
+            }
+            else if (all_buttons[i].pressable == Pressable::dropdown)
+            {
+                DropDownButton* temp_ptr = (DropDownButton*)all_buttons[i].button_ptr;
+                temp_ptr->draw();
+            }
+            else if (all_buttons[i].pressable == Pressable::checkbox)
+            {
+                CheckBox* temp_ptr = (CheckBox*)all_buttons[i].button_ptr;
+                temp_ptr->draw();
+            }
+            else if (all_buttons[i].pressable == Pressable::textbox)
+            {
+                TextWindow* temp_ptr = (TextWindow*)all_buttons[i].button_ptr;
+                temp_ptr->draw();
+            }
+        }
 
         window.display();
     }
