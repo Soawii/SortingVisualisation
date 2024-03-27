@@ -85,7 +85,6 @@ public:
     void populate_vector(size_t population)
     {
         if (!(can_populate || stopped)) return;
-        size = population;
         element_width = SORT_WIDTH / (int(population) * 1.0);
         if (element_width > 3) vertices_used = false;
         else vertices_used = true;
@@ -122,7 +121,14 @@ public:
 
         for (int i = 0; i < population; i++)
         {
-            orig_main_vector[i] = MAX_ELEMENT > 1000 ? (int((double(std::rand()) / RAND_MAX) * (MAX_ELEMENT - 1)) + 1) : (std::rand() % MAX_ELEMENT + 1);
+            if (MAX_ELEMENT >= RAND_MAX)
+            {
+                orig_main_vector[i] = int(((double)std::rand() / RAND_MAX) * (MAX_ELEMENT - 1)) + 1;
+            }
+            else
+            {
+                orig_main_vector[i] = (std::rand() % MAX_ELEMENT + 1);
+            }
 
             if (!vertices_used)
             {
@@ -211,28 +217,20 @@ public:
         return main_vector.size();
     }
 
-    void swap(int i, int j, bool true_sort)
+    void swap(int i, int j)
     {
-        if (!IS_ANIMATION) writes[current_sort] += 2;
+        if (IS_ANIMATION) changes.push_back({ i, j, 1 });
+        else writes[current_sort] += 2;
         int temp1 = main_vector[i];
         main_vector[i] = main_vector[j];
         main_vector[j] = temp1;
-        if (!true_sort) changes.push_back({ i, j, 1 });
     }
 
-    void good_swap(int i, int j, bool true_sort)
+    void set(int dest, int source)
     {
-        if (!IS_ANIMATION) writes[current_sort] += 2;
-        swap(i, new_idxs[j], true_sort);
-        for (int k = 0; k < main_vector.size(); k++)
-        {
-            if (new_idxs[k] == i)
-            {
-                new_idxs[k] = new_idxs[j];
-                new_idxs[j] = i;
-                break;
-            }
-        }
+        main_vector[dest] = orig_main_vector[source];
+        if (IS_ANIMATION) changes.push_back({ dest, source, 2 });
+        else writes[current_sort]++;
     }
 
     void swap_rectangles(int i, int j)
@@ -264,37 +262,14 @@ public:
         }
     }
 
-    void set(int source, int value, bool true_sort)
-    {
-        main_vector[source] = orig_main_vector[value];
-        if (!IS_ANIMATION) writes[current_sort]++;
-        if (!true_sort) changes.push_back({ source, value, 2 });
-    }
+    bool (*less_than)(int, int) = [](int a, int b) {return a < b; };
+    bool (*more_than)(int, int) = [](int a, int b) {return a > b; };
 
-    void set_value(int idx, int value, bool true_sort)
+    bool compare(int i, int j, bool (*cmp)(int, int))
     {
-        main_vector[idx] = value;
-        if (!IS_ANIMATION) writes[current_sort]++;
-        if (!true_sort) changes.push_back({ idx, idx, 2 });
-    }
-
-    bool compare(int i, int j, bool (*cmp)(int, int), bool true_sort)
-    {
-        if (!true_sort) changes.push_back({ i, j, 0 });
-        if (!IS_ANIMATION) comparisons[current_sort]++;
+        if (IS_ANIMATION) changes.push_back({ i, j, 0 });
+        else comparisons[current_sort]++;
         return cmp(main_vector[i], main_vector[j]);
-    }
-
-    bool orig_compare(int i, int j, bool (*cmp)(int, int), bool true_sort)
-    {
-        if (!true_sort) changes.push_back({ i, j, 0 });
-        if (!IS_ANIMATION) comparisons[current_sort]++;
-        return cmp(orig_main_vector[i], orig_main_vector[j]);
-    }
-
-    bool is_stopped() const
-    {
-        return stopped;
     }
 
     void stop()
@@ -322,7 +297,7 @@ public:
                 changes.clear();
                 if (!done_phase)
                 {
-                    for (int i = 0; i < size; i++)
+                    for (int i = 0; i < main_vector.size(); i++)
                     {
                         changes.push_back({ i, i, 3 });
                     }
@@ -341,7 +316,7 @@ public:
         int ACTIONS_TO_DO = -1;
         if (ACTIONS_DONE < changes.size())
         {
-            ACTIONS_TO_DO = done_phase ? std::max(1, size / 50) : (stopped ? 0 : ACTIONS_PER_FRAME);
+            ACTIONS_TO_DO = done_phase ? std::max(1, int(main_vector.size() / 50)) : (stopped ? 0 : ACTIONS_PER_FRAME);
             for (int idx = ACTIONS_DONE; idx < std::min(int(changes.size()), ACTIONS_DONE + ACTIONS_TO_DO); idx++)
             {
                 int i = changes[idx][0], j = changes[idx][1];
@@ -361,15 +336,8 @@ public:
                     writes[current_sort]++;
                     if (vertices_used)
                     {
-                        if (vertex_vector.getPrimitiveType() == sf::Lines)
-                        {
-                            vertex_vector[i_idx].position.y = orig_vertex_vector[j_idx].position.y;
-                        }
-                        else
-                        {
-                            vertex_vector[i_idx].position.y = orig_vertex_vector[j_idx].position.y;
-                            vertex_vector[i_idx + 3].position.y = orig_vertex_vector[j_idx + 3].position.y;
-                        }
+                        vertex_vector[i_idx].position.y = orig_vertex_vector[j_idx].position.y;
+                        if (vertex_vector.getPrimitiveType() == sf::Quads) vertex_vector[i_idx + 3].position.y = orig_vertex_vector[j_idx + 3].position.y;
                     }
                     else
                     {
@@ -382,10 +350,7 @@ public:
                     if (!vertices_used) rectangle_vector[i]->setFillColor(DONE_COLOR);
                     else
                     {
-                        for (int k = 0; k < add; k++)
-                        {
-                            vertex_vector[i_idx + k].color = DONE_COLOR;
-                        }
+                        for (int k = 0; k < add; k++) vertex_vector[i_idx + k].color = DONE_COLOR;
                     }
                 }
                 else
@@ -393,51 +358,29 @@ public:
                     if (!vertices_used) rectangle_vector[i]->setFillColor(ACTION_COLOR);
                     else
                     {
-                        for (int k = 0; k < add; k++)
-                        {
-                            vertex_vector[i_idx + k].color = ACTION_COLOR;
-                        }
+                        for (int k = 0; k < add; k++) vertex_vector[i_idx + k].color = ACTION_COLOR;
                     }
                     if (changes[idx][2] != 2)
                     {
                         if (!vertices_used) rectangle_vector[j]->setFillColor(ACTION_COLOR);
                         else
                         {
-                            for (int k = 0; k < add; k++)
-                            {
-                                vertex_vector[j_idx + k].color = ACTION_COLOR;
-                            }
+                            for (int k = 0; k < add; k++) vertex_vector[j_idx + k].color = ACTION_COLOR;
                         }
                     }
                 }
-                if (!vertices_used)
+                avg += vertices_used ? HEIGHT - vertex_vector[i_idx].position.y : rectangle_vector[i]->getSize().y;
+                cnt++;
+                if (i != j)
                 {
-                    avg += rectangle_vector[i]->getSize().y;
+                    avg += vertices_used ? HEIGHT - vertex_vector[j_idx].position.y : rectangle_vector[j]->getSize().y;
                     cnt++;
-                    if (i != j)
-                    {
-                        avg += rectangle_vector[j]->getSize().y;
-                        cnt++;
-                    }
-                }
-                else
-                {
-                    avg += HEIGHT - vertex_vector[i_idx].position.y;
-                    cnt++;
-                    if (i != j)
-                    {
-                        avg += HEIGHT - vertex_vector[j_idx].position.y;
-                        cnt++;
-                    }
                 }
             }
         }
         if (!vertices_used)
         {
-            for (int i = 0; i < rectangle_vector.size(); i++)
-            {
-                window->draw(*rectangle_vector[i]);
-            }
+            for (int i = 0; i < rectangle_vector.size(); i++) window->draw(*rectangle_vector[i]);
         }
         else
         {
@@ -471,20 +414,14 @@ public:
                     if (!vertices_used) rectangle_vector[i]->setFillColor(NORMAL_COLOR);
                     else
                     {
-                        for (int k = 0; k < add; k++)
-                        {
-                            vertex_vector[i_idx + k].color = NORMAL_COLOR;
-                        }
+                        for (int k = 0; k < add; k++) vertex_vector[i_idx + k].color = NORMAL_COLOR;
                     }
                     if (changes[idx][2] != 2)
                     {
                         if (!vertices_used) rectangle_vector[j]->setFillColor(NORMAL_COLOR);
                         else
                         {
-                            for (int k = 0; k < add; k++)
-                            {
-                                vertex_vector[j_idx + k].color = NORMAL_COLOR;
-                            }
+                            for (int k = 0; k < add; k++) vertex_vector[j_idx + k].color = NORMAL_COLOR;
                         }
                     }
                 }
@@ -530,7 +467,10 @@ public:
             if (main_vector.size() > min_max_element) populate_vector(min_max_element);
             else repopulate_vector();
         }
-        for (int i = 0; i < (IS_ANIMATION ? 1 : 3); i++)
+
+        int sorts = (IS_ANIMATION ? 1 : 3);
+        IS_ANIMATION = false;
+        for (int i = 0; i < sorts; i++)
         {
             current_sort = i;
             repopulate_vector();
@@ -540,18 +480,20 @@ public:
 
             int start = clock.getElapsedTime().asMilliseconds();
 
-            if (sort_chosen[i] == Sort::bubble) bubble_sort(true);
-            else if (sort_chosen[i] == Sort::coctail_shaker) coctail_shaker_sort(true);
-            else if (sort_chosen[i] == Sort::insertion) insertion_sort(true);
-            else if (sort_chosen[i] == Sort::quick) quick_sort(true);
-            else if (sort_chosen[i] == Sort::merge) merge_sort(true);
-            else if (sort_chosen[i] == Sort::heap) heap_sort(true);
-            else if (sort_chosen[i] == Sort::counting) counting_sort(true);
-            else if (sort_chosen[i] == Sort::radix) radix_sort(true);
+            if (sort_chosen[i] == Sort::bubble) bubble_sort();
+            else if (sort_chosen[i] == Sort::coctail_shaker) coctail_shaker_sort();
+            else if (sort_chosen[i] == Sort::insertion) insertion_sort();
+            else if (sort_chosen[i] == Sort::quick) quick_sort();
+            else if (sort_chosen[i] == Sort::merge) merge_sort();
+            else if (sort_chosen[i] == Sort::heap) heap_sort();
+            else if (sort_chosen[i] == Sort::counting) counting_sort();
+            else if (sort_chosen[i] == Sort::radix) radix_sort();
 
             int end = clock.getElapsedTime().asMilliseconds();
             time_text[i].setString("Time: " + std::to_string(end - start) + " ms.");
         }
+        IS_ANIMATION = (sorts == 1 ? true : false);
+
         if (IS_ANIMATION)
         {
             repopulate_vector();
@@ -588,37 +530,37 @@ public:
         }
     }
 
-    void bubble_sort(bool true_sort = false)
+    void bubble_sort()
     {
-        for (int i = 0; i < size; i++)
+        for (int i = 0; i < main_vector.size(); i++)
         {
-            for (int j = 1; j < size - i; j++)
+            for (int j = 1; j < main_vector.size() - i; j++)
             {
-                if (compare(j - 1, j, [](int a, int b) {return a > b; }, true_sort)) swap(j - 1, j, true_sort);
+                if (compare(j - 1, j, more_than)) swap(j - 1, j);
             }
         }
     }
 
-    void coctail_shaker_sort(bool true_sort = false)
+    void coctail_shaker_sort()
     {
-        for (int i = 0; i < size / 2 + 1; i++)
+        for (int i = 0; i < main_vector.size() / 2 + 1; i++)
         {
             bool sorted = true;
-            for (int j = i + 1; j < size - i; j++)
+            for (int j = i + 1; j < main_vector.size() - i; j++)
             {
-                if (compare(j - 1, j, [](int a, int b) {return a > b; }, true_sort))
+                if (compare(j - 1, j, more_than))
                 {
-                    swap(j - 1, j, true_sort);
+                    swap(j - 1, j);
                     sorted = false;
                 }
             }
             if (sorted) break;
             sorted = true;
-            for (int j = size - 1 - i; j >= 1 + i; j--)
+            for (int j = main_vector.size() - 1 - i; j >= 1 + i; j--)
             {
-                if (compare(j - 1, j, [](int a, int b) {return a > b; }, true_sort))
+                if (compare(j - 1, j, more_than))
                 {
-                    swap(j - 1, j, true_sort);
+                    swap(j - 1, j);
                     sorted = false;
                 }
             }
@@ -626,74 +568,74 @@ public:
         }
     }
 
-    void insertion_sort(bool true_sort = false)
+    void insertion_sort()
     {
-        for (int i = 1; i < size; i++)
+        for (int i = 1; i < main_vector.size(); i++)
         {
             for (int j = i; j > 0; j--)
             {
-                if (compare(j - 1, j, [](int a, int b) {return a > b; }, true_sort)) swap(j - 1, j, true_sort);
+                if (compare(j - 1, j, more_than)) swap(j - 1, j);
                 else break;
             }
         }
     }
 
-    void quick_sort(bool true_sort = false)
+    void quick_sort()
     {
-        quick_sort_helper(0, size - 1, true_sort);
+        quick_sort_helper(0, main_vector.size() - 1);
     }
 
-    void quick_sort_helper(int left, int right, bool true_sort)
+    void quick_sort_helper(int left, int right)
     {
         if (left >= right) return;
         int mid = (left + right) / 2;
-        if (mid != right) swap(mid, right, true_sort);
+        if (mid != right) swap(mid, right);
         int idx = left;
         for (int i = left; i < right; i++)
         {
-            if (compare(i, right, [](int a, int b) {return a < b; }, true_sort))
+            if (compare(i, right, less_than))
             {
-                swap(i, idx, true_sort);
+                swap(i, idx);
                 idx++;
             }
         }
-        if (idx != right) swap(idx, right, true_sort);
+        if (idx != right) swap(idx, right);
         int right_idx = idx + 1;
         for (int i = idx + 1; i <= right; i++)
         {
-            if (compare(i, idx, [](int a, int b) {return a == b; }, true_sort))
+            if (compare(i, idx, [](int a, int b) {return a == b; }))
             {
-                swap(i, right_idx, true_sort);
+                swap(i, right_idx);
                 right_idx++;
             }
         }
-        quick_sort_helper(left, idx - 1, true_sort);
-        quick_sort_helper(right_idx, right, true_sort);
+        quick_sort_helper(left, idx - 1);
+        quick_sort_helper(right_idx, right);
     }
 
-    void merge_sort(bool true_sort = false)
+    void merge_sort()
     {
-        merge_sort_helper(0, size - 1, true_sort);
+        merge_sort_helper(0, main_vector.size() - 1);
     }
 
-    void merge_sort_helper(int left, int right, bool true_sort)
+    void merge_sort_helper(int left, int right)
     {
         if (left >= right) return;
         int mid = (left + right) / 2;
-        merge_sort_helper(left, mid, true_sort);
-        merge_sort_helper(mid + 1, right, true_sort);
+        merge_sort_helper(left, mid);
+        merge_sort_helper(mid + 1, right);
         std::vector<int> arr(right - left + 1);
         int idx = 0;
         int left_idx = left, right_idx = mid + 1;
         while (left_idx <= mid || right_idx <= right)
         {
-            if (!true_sort)
+            if (IS_ANIMATION)
             {
                 if (left_idx > mid) arr[idx++] = right_idx++;
                 else if (right_idx > right) arr[idx++] = left_idx++;
                 else
                 {
-                    if (compare(left_idx, right_idx, [](int a, int b) {return a < b; }, true_sort)) arr[idx++] = left_idx++;
+                    if (compare(left_idx, right_idx, less_than)) arr[idx++] = left_idx++;
                     else arr[idx++] = right_idx++;
                 }
             }
@@ -703,17 +645,17 @@ public:
                 else if (right_idx > right) arr[idx++] = main_vector[left_idx++];
                 else
                 {
-                    if (compare(left_idx, right_idx, [](int a, int b) {return a < b; }, true_sort)) arr[idx++] = main_vector[left_idx++];
+                    if (compare(left_idx, right_idx, less_than)) arr[idx++] = main_vector[left_idx++];
                     else arr[idx++] = main_vector[right_idx++];
                 }
             }
         }
 
-        if (!true_sort)
+        if (IS_ANIMATION)
         {
             for (int i = left; i <= right; i++)
             {
-                swap(i, arr[i - left], true_sort);
+                swap(i, arr[i - left]);
                 for (int j = i - left + 1; j <= right - left; j++)
                 {
                     if (arr[j] == i)
@@ -732,75 +674,37 @@ public:
         }
     }
 
-    struct HeapNode
+    void heapify(int idx, int size)
     {
-        int idx = 0;
-        int amount = 1;
-        HeapNode* parent = nullptr, * left = nullptr, * right = nullptr;
-    };
-    int current_tree_idx = 0;
-
-    void insert_element_into_heap(HeapNode* head, int idx, bool true_sort)
-    {
-        if (orig_compare(idx, head->idx, [](int a, int b) {return a < b; }, true_sort))
+        int largest_idx = idx, left_idx = 2 * idx + 1, right_idx = 2 * idx + 2;
+        if (left_idx < size && compare(left_idx, largest_idx, more_than)) largest_idx = left_idx;
+        if (right_idx < size && compare(right_idx, largest_idx, more_than)) largest_idx = right_idx;
+        if (idx != largest_idx)
         {
-            if (head->left == nullptr)
-            {
-                head->left = new HeapNode;
-                head->left->idx = idx;
-            }
-            else insert_element_into_heap(head->left, idx, true_sort);
+            swap(idx, largest_idx);
+            heapify(largest_idx, size);
         }
-        else if (orig_compare(idx, head->idx, [](int a, int b) {return a > b; }, true_sort))
-        {
-            if (head->right == nullptr)
-            {
-                head->right = new HeapNode;
-                head->right->idx = idx;
-            }
-            else insert_element_into_heap(head->right, idx, true_sort);
-        }
-        else head->amount++;
     }
-    void heap_sort(bool true_sort = false)
+    void heap_sort()
     {
-        HeapNode* head = new HeapNode;
-        head->right = new HeapNode;
-        head->right->idx = 0;
-        for (int i = 1; i < orig_main_vector.size(); i++)
+        for (int i = main_vector.size() / 2; i >= 0; i--) heapify(i, main_vector.size());
+        for (int i = main_vector.size() - 1; i >= 0; i--)
         {
-            insert_element_into_heap(head->right, i, true_sort);
-        }
-        int idx = orig_main_vector.size() - 1;
-        while (head->right != nullptr && idx >= 0)
-        {
-            HeapNode* temp = head;
-            while (temp->right != nullptr && temp->right->right != nullptr)
-            {
-                temp = temp->right;
-            }
-            set(idx, temp->right->idx, true_sort);
-            idx--;
-            temp->right->amount--;
-            if (temp->right->amount == 0)
-            {
-                HeapNode* temp_left = temp->right->left;
-                delete temp->right;
-                temp->right = temp_left;
-            }
+            swap(0, i);
+            heapify(0, i);
         }
     }
 
 
-    void counting_sort(bool true_sort = false)
+    void counting_sort()
     {
         std::vector<std::pair<int, int>> arr(MAX_ELEMENT + 1, std::pair<int, int>(0, 0));
         writes[current_sort] += MAX_ELEMENT;
-        for (int i = 0; i < size; i++)
+        for (int i = 0; i < main_vector.size(); i++)
         {
             arr[main_vector[i]].first++;
             arr[main_vector[i]].second = i;
-            compare(i, i, [](int a, int b) {return a < b; }, true_sort);
+            compare(i, i, [](int a, int b) {return a < b; });
         }
         int idx = 0;
         for (int i = 0; i < arr.size(); i++)
@@ -808,17 +712,17 @@ public:
             while (arr[i].first > 0)
             {
                 arr[i].first--;
-                set(idx++, arr[i].second, true_sort);
+                set(idx++, arr[i].second);
             }
         }
     }
 
-    void radix_sort(bool true_sort = false)
+    void radix_sort()
     {
         int max_element = main_vector[0], max_element_idx = 0;
         for (int i = 1; i < main_vector.size(); i++)
         {
-            if (compare(i, max_element_idx, [](int a, int b) {return a > b; }, true_sort))
+            if (compare(i, max_element_idx, more_than))
             {
                 max_element = main_vector[i];
                 max_element_idx = i;
@@ -841,7 +745,7 @@ public:
             {
                 for (int j = 0; j < counting_arr[i].size(); j++)
                 {
-                    set(idx, counting_arr[i][j], true_sort);
+                    set(idx, counting_arr[i][j]);
                     new_idxs[idx] = counting_arr[i][j];
                     idx++;
                 }
@@ -868,8 +772,6 @@ private:
     std::vector<std::vector<int>> changes;
     int ACTIONS_DONE = 0;
     double element_width;
-    int size;
-    int milliseconds_to_sort = -1;
 
     sf::SoundBuffer sound_buffer;
     sf::SoundBuffer trimmed_buffer;
@@ -959,7 +861,7 @@ public:
         }
         if (text_string == "STOP")
         {
-            if (main_vec->is_stopped()) main_vec->unstop();
+            if (main_vec->stopped) main_vec->unstop();
             else main_vec->stop();
         }
         if (!holdable) unpress();
