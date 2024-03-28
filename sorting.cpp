@@ -18,9 +18,10 @@ int SOUND_COEFF = 20;
 int POPULATION = 100;
 int IS_ANIMATION = 0;
 
-enum class Sort { bubble, coctail_shaker, insertion, quick, merge, heap, counting, radix };
+enum class Sort { bubble, coctail_shaker, insertion, shell, quick, merge, heap, counting, radix };
 enum class Pressable { button, slider, textbox, dropdown, checkbox };
 
+// Class used for handling button priority so 2 buttons don't get pressed at once
 class ButtonPriority
 {
 public:
@@ -37,6 +38,7 @@ public:
 
 std::vector<ButtonPriority> all_buttons;
 
+// Class handling the main array, its sort functions and everything else
 class MainVector
 {
 public:
@@ -50,6 +52,7 @@ public:
         stat_text.resize(3);
         time_text.resize(3);
 
+        // Set positions and sizes of info texts
         for (int i = 0; i < 3; i++)
         {
             info_text[i].setFont(font);
@@ -72,9 +75,11 @@ public:
 
         sound_buffer.loadFromFile("laser.wav");
 
+        // Cuts the sound to 4% of its length, easiest way i found to do it :(
         std::size_t start_cut = sound_buffer.getSampleCount() * 0.46, end_cut = sound_buffer.getSampleCount() * 0.5;
         trimmed_buffer.loadFromSamples(sound_buffer.getSamples() + start_cut, sound_buffer.getSampleCount() - start_cut - end_cut, sound_buffer.getChannelCount(), sound_buffer.getSampleRate());
 
+        // Pitches of the sound, bigger element in the array = higher pitch used for sound
         beep_pitches.resize(1000, 0);
         for (int i = 0; i < 1000; i++)
         {
@@ -82,6 +87,8 @@ public:
         }
     }
 
+    // Populates the array with (population) elements, fills it with random elements depending on MAX_ELEMENT value.
+    // Additionally sets RectangleShapes or Vertexes (based on population size) to their corresponding array elements
     void populate_vector(size_t population)
     {
         if (!(can_populate || stopped)) return;
@@ -171,6 +178,7 @@ public:
         unstop();
     }
 
+    // Does the same thing as populate_vector, except array values stay the same
     void repopulate_vector()
     {
         int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
@@ -199,6 +207,7 @@ public:
         unstop();
     }
 
+    // Sets the sort algorithm for #(sort_number) sort, changes info and time texts according to the algorithm set.
     void set_sort(Sort new_sort, int sort_number)
     {
         if (!((can_populate && can_sort) || stopped)) return;
@@ -217,22 +226,23 @@ public:
         return main_vector.size();
     }
 
+    // Swaps elements in the main array, pushes info into changes array
     void swap(int i, int j)
     {
-        if (IS_ANIMATION) changes.push_back({ i, j, 1 });
+        if (IS_ANIMATION) changes.push_back({ i, j, (int)ActionType::swap });
         else writes[current_sort] += 2;
-        int temp1 = main_vector[i];
-        main_vector[i] = main_vector[j];
-        main_vector[j] = temp1;
+        std::swap(main_vector[i], main_vector[j]);
     }
 
+    // Sets value in main_vector[dest] equal to value in orig_main_vector[source], pushes info into changes array
     void set(int dest, int source)
     {
         main_vector[dest] = orig_main_vector[source];
-        if (IS_ANIMATION) changes.push_back({ dest, source, 2 });
+        if (IS_ANIMATION) changes.push_back({ dest, source, (int)ActionType::set });
         else writes[current_sort]++;
     }
 
+    // Swaps rectangles or vertices with indexes i and j
     void swap_rectangles(int i, int j)
     {
         if (!vertices_used)
@@ -265,9 +275,10 @@ public:
     bool (*less_than)(int, int) = [](int a, int b) {return a < b; };
     bool (*more_than)(int, int) = [](int a, int b) {return a > b; };
 
+    // Compares elements in the main array with indexes i and j based on the cmp function, pushes info into changes array
     bool compare(int i, int j, bool (*cmp)(int, int))
     {
-        if (IS_ANIMATION) changes.push_back({ i, j, 0 });
+        if (IS_ANIMATION) changes.push_back({ i, j, (int)ActionType::comparison });
         else comparisons[current_sort]++;
         return cmp(main_vector[i], main_vector[j]);
     }
@@ -284,12 +295,15 @@ public:
         stopped = false;
     }
 
+    // Main draw function
     void draw()
     {
         int min_sound = 1000000000, max_sound = -1;
         double avg = 0;
         int cnt = 0;
 
+        // If we've done more actions than there are elements in the changes array, we are done with the main part of the animation.
+        // Now all there is left to do is the "Done Animation" or turn all rectangles or vertices green.
         if (ACTIONS_DONE >= changes.size())
         {
             if (changes.size() > 0)
@@ -299,7 +313,7 @@ public:
                 {
                     for (int i = 0; i < main_vector.size(); i++)
                     {
-                        changes.push_back({ i, i, 3 });
+                        changes.push_back({ i, i, (int)ActionType::green_set });
                     }
                     done_phase = true;
                 }
@@ -313,6 +327,7 @@ public:
             ACTIONS_DONE = 0;
         }
 
+        // Animate the amount of actions set by the value of ACTIONS_PER_FRAME
         int ACTIONS_TO_DO = -1;
         if (ACTIONS_DONE < changes.size())
         {
@@ -322,16 +337,15 @@ public:
                 int i = changes[idx][0], j = changes[idx][1];
                 int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
                 int i_idx = (i * add), j_idx = (j * add);
-                if (changes[idx][2] == 0)
-                {
-                    comparisons[current_sort]++;
-                }
-                if (changes[idx][2] == 1)
+
+                // Perform different operations based on the type of the current action
+                if (changes[idx][2] == (int)ActionType::comparison) comparisons[current_sort]++;
+                else if (changes[idx][2] == (int)ActionType::swap)
                 {
                     writes[current_sort] += 2;
                     swap_rectangles(i, j);
                 }
-                if (changes[idx][2] == 2)
+                else if (changes[idx][2] == (int)ActionType::set)
                 {
                     writes[current_sort]++;
                     if (vertices_used)
@@ -345,7 +359,7 @@ public:
                         rectangle_vector[i]->setPosition(sf::Vector2f(i * element_width, HEIGHT - rectangle_vector[i]->getSize().y));
                     }
                 }
-                if (changes[idx][2] == 3)
+                else if (changes[idx][2] == (int)ActionType::green_set)
                 {
                     if (!vertices_used) rectangle_vector[i]->setFillColor(DONE_COLOR);
                     else
@@ -353,7 +367,9 @@ public:
                         for (int k = 0; k < add; k++) vertex_vector[i_idx + k].color = DONE_COLOR;
                     }
                 }
-                else
+                
+                // If action is not of type green_set, set the colors of the current rectangles or vertices to the ACTION_COLOR
+                if (changes[idx][2] != (int)ActionType::green_set)
                 {
                     if (!vertices_used) rectangle_vector[i]->setFillColor(ACTION_COLOR);
                     else
@@ -369,6 +385,8 @@ public:
                         }
                     }
                 }
+
+                // Add height of the current rectangle of vertex to the avg value, to determine the pitch of the sound played on this frame
                 avg += vertices_used ? HEIGHT - vertex_vector[i_idx].position.y : rectangle_vector[i]->getSize().y;
                 cnt++;
                 if (i != j)
@@ -380,10 +398,13 @@ public:
         }
         if (!vertices_used)
         {
+            // If rectangles are used, draw all of them on the window
             for (int i = 0; i < rectangle_vector.size(); i++) window->draw(*rectangle_vector[i]);
         }
         else
         {
+            // If vertices are used, we only want to draw the ones that are the first to lay on each pixel
+            // This is done so we don't draw up to a million vertices but only the amount needed when array size gets too big
             int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
             if (add == 2)
             {
@@ -402,6 +423,8 @@ public:
             }
             else window->draw(vertex_vector);
         }
+
+        // After we finished drawing, change the colors of changed rectangles or vertices back to normal
         if (ACTIONS_DONE < changes.size())
         {
             for (int idx = ACTIONS_DONE; idx < std::min(int(changes.size()), ACTIONS_DONE + ACTIONS_TO_DO); idx++)
@@ -409,14 +432,14 @@ public:
                 int i = changes[idx][0], j = changes[idx][1];
                 int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
                 int i_idx = (i * add), j_idx = (j * add);
-                if (changes[idx][2] != 3)
+                if (changes[idx][2] != (int)ActionType::green_set)
                 {
                     if (!vertices_used) rectangle_vector[i]->setFillColor(NORMAL_COLOR);
                     else
                     {
                         for (int k = 0; k < add; k++) vertex_vector[i_idx + k].color = NORMAL_COLOR;
                     }
-                    if (changes[idx][2] != 2)
+                    if (changes[idx][2] != (int)ActionType::set)
                     {
                         if (!vertices_used) rectangle_vector[j]->setFillColor(NORMAL_COLOR);
                         else
@@ -428,6 +451,7 @@ public:
             }
         }
 
+        // Update text info of all sorts
         for (int i = 0; i < (IS_ANIMATION ? 1 : 3); i++)
         {
             stat_text[i].setString("Comparisons: " + std::to_string(comparisons[i]) + "   Writes: " + std::to_string(writes[i]));
@@ -436,12 +460,14 @@ public:
             window->draw(time_text[i]);
         }
 
+        // Delete all sounds that stopped playing from the deque
         while (!sound_deque.empty() && sound_deque.front()->getStatus() == sf::Sound::Stopped)
         {
             delete sound_deque.front();
             sound_deque.pop_front();
         }
 
+        // Add a sound with a pitch based on the value of elements accessed on this frame
         if (ACTIONS_TO_DO > 0)
         {
             int ratio = int((avg / cnt / HEIGHT) * 999);
@@ -454,8 +480,10 @@ public:
         }
     }
 
+    // Main sort method
     void sort()
     {
+        // Populate main array with appropriate size if the size set is too big for one of the chosen sort algorithms
         if (IS_ANIMATION)
         {
             if (main_vector.size() > sort_to_max_limited[int(sort_chosen[0])]) populate_vector(sort_to_max_limited[int(sort_chosen[0])]);
@@ -470,6 +498,10 @@ public:
 
         int sorts = (IS_ANIMATION ? 1 : 3);
         IS_ANIMATION = false;
+        PURE_SORTING = true;
+
+        // First sort done with PURE_SORTING set to true, to measure accurate time of sorts performed.
+        // PURE_SORTING set to true makes comparisons and swaps not call additional functions causing significant speedloss.
         for (int i = 0; i < sorts; i++)
         {
             current_sort = i;
@@ -483,6 +515,7 @@ public:
             if (sort_chosen[i] == Sort::bubble) bubble_sort();
             else if (sort_chosen[i] == Sort::coctail_shaker) coctail_shaker_sort();
             else if (sort_chosen[i] == Sort::insertion) insertion_sort();
+            else if (sort_chosen[i] == Sort::shell) shell_sort();
             else if (sort_chosen[i] == Sort::quick) quick_sort();
             else if (sort_chosen[i] == Sort::merge) merge_sort();
             else if (sort_chosen[i] == Sort::heap) heap_sort();
@@ -492,25 +525,35 @@ public:
             int end = clock.getElapsedTime().asMilliseconds();
             time_text[i].setString("Time: " + std::to_string(end - start) + " ms.");
         }
-        IS_ANIMATION = (sorts == 1 ? true : false);
 
-        if (IS_ANIMATION)
+        IS_ANIMATION = (sorts == 1 ? true : false);
+        PURE_SORTING = false;
+
+        // Second sort done with PURE_SORTING set to false, to fill the changes array, get the comparison and write amount.
+        for (int i = 0; i < sorts; i++)
         {
             repopulate_vector();
+            current_sort = i;
+            comparisons[i] = 0;
+            writes[i] = 0;
 
             can_sort = false;
             can_populate = false;
 
-            if (sort_chosen[0] == Sort::bubble) bubble_sort();
-            else if (sort_chosen[0] == Sort::coctail_shaker) coctail_shaker_sort();
-            else if (sort_chosen[0] == Sort::insertion) insertion_sort();
-            else if (sort_chosen[0] == Sort::quick) quick_sort();
-            else if (sort_chosen[0] == Sort::merge) merge_sort();
-            else if (sort_chosen[0] == Sort::heap) heap_sort();
-            else if (sort_chosen[0] == Sort::counting) counting_sort();
-            else if (sort_chosen[0] == Sort::radix) radix_sort();
+            if (sort_chosen[i] == Sort::bubble) bubble_sort();
+            else if (sort_chosen[i] == Sort::coctail_shaker) coctail_shaker_sort();
+            else if (sort_chosen[i] == Sort::insertion) insertion_sort();
+            else if (sort_chosen[i] == Sort::shell) shell_sort();
+            else if (sort_chosen[i] == Sort::quick) quick_sort();
+            else if (sort_chosen[i] == Sort::merge) merge_sort();
+            else if (sort_chosen[i] == Sort::heap) heap_sort();
+            else if (sort_chosen[i] == Sort::counting) counting_sort();
+            else if (sort_chosen[i] == Sort::radix) radix_sort();
         }
-        else
+
+        // If mode is set to compare, change all rectangles and vertices according to elements in already sorted array.
+        // Additionly, push 1 comparison to changes array so the sort ending animation triggers.
+        if (!IS_ANIMATION)
         {
             for (int i = 0; i < main_vector.size(); i++)
             {
@@ -526,7 +569,7 @@ public:
                     if (vertex_vector.getPrimitiveType() == sf::Quads) vertex_vector[i_idx + 3].position.y = HEIGHT - (double(main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT);
                 }
             }
-            changes.push_back({ 0, 0, 0 });
+            changes.push_back({ 0, 0, (int)ActionType::comparison});
         }
     }
 
@@ -536,7 +579,11 @@ public:
         {
             for (int j = 1; j < main_vector.size() - i; j++)
             {
-                if (compare(j - 1, j, more_than)) swap(j - 1, j);
+                if (PURE_SORTING)
+                {
+                    if (main_vector[j - 1] > main_vector[j]) std::swap(main_vector[j - 1], main_vector[j]);
+                }
+                else if (compare(j - 1, j, more_than)) swap(j - 1, j);
             }
         }
     }
@@ -548,7 +595,15 @@ public:
             bool sorted = true;
             for (int j = i + 1; j < main_vector.size() - i; j++)
             {
-                if (compare(j - 1, j, more_than))
+                if (PURE_SORTING)
+                {
+                    if (main_vector[j - 1] > main_vector[j])
+                    {
+                        std::swap(main_vector[j - 1], main_vector[j]);
+                        sorted = false;
+                    }
+                }
+                else if (compare(j - 1, j, more_than))
                 {
                     swap(j - 1, j);
                     sorted = false;
@@ -558,7 +613,15 @@ public:
             sorted = true;
             for (int j = main_vector.size() - 1 - i; j >= 1 + i; j--)
             {
-                if (compare(j - 1, j, more_than))
+                if (PURE_SORTING)
+                {
+                    if (main_vector[j - 1] > main_vector[j])
+                    {
+                        std::swap(main_vector[j - 1], main_vector[j]);
+                        sorted = false;
+                    }
+                }
+                else if (compare(j - 1, j, more_than))
                 {
                     swap(j - 1, j);
                     sorted = false;
@@ -574,8 +637,28 @@ public:
         {
             for (int j = i; j > 0; j--)
             {
-                if (compare(j - 1, j, more_than)) swap(j - 1, j);
+                if (PURE_SORTING)
+                {
+                    if (main_vector[j - 1] > main_vector[j]) std::swap(main_vector[j - 1], main_vector[j]);
+                    else break;
+                }
+                else if (compare(j - 1, j, more_than)) swap(j - 1, j);
                 else break;
+            }
+        }
+    }
+
+    void shell_sort()
+    {
+        for (int gap = main_vector.size() / 2; gap >= 1; gap /= 2)
+        {
+            for (int i = gap; i < main_vector.size(); i++)
+            {
+                for (int j = i; j >= gap && (PURE_SORTING ? main_vector[j - gap] > main_vector[j] : compare(j - gap, j, more_than)); j -= gap)
+                {
+                    if (PURE_SORTING) std::swap(main_vector[j], main_vector[j - gap]);
+                    else swap(j, j - gap);
+                }
             }
         }
     }
@@ -589,21 +672,45 @@ public:
     {
         if (left >= right) return;
         int mid = (left + right) / 2;
-        if (mid != right) swap(mid, right);
+        if (mid != right)
+        {
+            if (PURE_SORTING) std::swap(main_vector[mid], main_vector[right]);
+            else swap(mid, right);
+        }
         int idx = left;
         for (int i = left; i < right; i++)
         {
-            if (compare(i, right, less_than))
+            if (PURE_SORTING)
+            {
+                if (main_vector[i] > main_vector[right])
+                {
+                    std::swap(main_vector[i], main_vector[idx]);
+                    idx++;
+                }   
+            }
+            else if (compare(i, right, less_than))
             {
                 swap(i, idx);
                 idx++;
             }
         }
-        if (idx != right) swap(idx, right);
+        if (idx != right)
+        {
+            if (PURE_SORTING) std::swap(main_vector[idx], main_vector[right]);
+            else swap(idx, right);
+        }
         int right_idx = idx + 1;
         for (int i = idx + 1; i <= right; i++)
         {
-            if (compare(i, idx, [](int a, int b) {return a == b; }))
+            if (PURE_SORTING)
+            {
+                if (main_vector[i] == main_vector[idx])
+                {
+                    std::swap(main_vector[i], main_vector[right_idx]);
+                    right_idx++;
+                }
+            }
+            else if (compare(i, idx, [](int a, int b) {return a == b; }))
             {
                 swap(i, right_idx);
                 right_idx++;
@@ -635,8 +742,16 @@ public:
                 else if (right_idx > right) arr[idx++] = left_idx++;
                 else
                 {
-                    if (compare(left_idx, right_idx, less_than)) arr[idx++] = left_idx++;
-                    else arr[idx++] = right_idx++;
+                    if (PURE_SORTING)
+                    {
+                        if (main_vector[left_idx] < main_vector[right_idx]) arr[idx++] = left_idx++;
+                        else arr[idx++] = right_idx++;
+                    }
+                    else
+                    {
+                        if (compare(left_idx, right_idx, less_than)) arr[idx++] = left_idx++;
+                        else arr[idx++] = right_idx++;
+                    }
                 }
             }
             else
@@ -645,8 +760,16 @@ public:
                 else if (right_idx > right) arr[idx++] = main_vector[left_idx++];
                 else
                 {
-                    if (compare(left_idx, right_idx, less_than)) arr[idx++] = main_vector[left_idx++];
-                    else arr[idx++] = main_vector[right_idx++];
+                    if (PURE_SORTING)
+                    {
+                        if (main_vector[left_idx] < main_vector[right_idx]) arr[idx++] = main_vector[left_idx++];
+                        else arr[idx++] = right_idx++;
+                    }
+                    else
+                    {
+                        if (compare(left_idx, right_idx, less_than)) arr[idx++] = main_vector[left_idx++];
+                        else arr[idx++] = main_vector[right_idx++];
+                    }
                 }
             }
         }
@@ -677,11 +800,32 @@ public:
     void heapify(int idx, int size)
     {
         int largest_idx = idx, left_idx = 2 * idx + 1, right_idx = 2 * idx + 2;
-        if (left_idx < size && compare(left_idx, largest_idx, more_than)) largest_idx = left_idx;
-        if (right_idx < size && compare(right_idx, largest_idx, more_than)) largest_idx = right_idx;
+        if (left_idx < size)
+        {
+            if (PURE_SORTING)
+            {
+                if (main_vector[left_idx] > main_vector[largest_idx]) largest_idx = left_idx;
+            }
+            else
+            {
+                if (compare(left_idx, largest_idx, more_than)) largest_idx = left_idx;
+            }
+        }
+        if (right_idx < size)
+        {
+            if (PURE_SORTING)
+            {
+                if (main_vector[right_idx] > main_vector[largest_idx]) largest_idx = right_idx;
+            }
+            else
+            {
+                if (compare(right_idx, largest_idx, more_than)) largest_idx = right_idx;
+            }
+        }
         if (idx != largest_idx)
         {
-            swap(idx, largest_idx);
+            if (PURE_SORTING) std::swap(main_vector[idx], main_vector[largest_idx]);
+            else swap(idx, largest_idx);
             heapify(largest_idx, size);
         }
     }
@@ -690,7 +834,8 @@ public:
         for (int i = main_vector.size() / 2; i >= 0; i--) heapify(i, main_vector.size());
         for (int i = main_vector.size() - 1; i >= 0; i--)
         {
-            swap(0, i);
+            if (PURE_SORTING) std::swap(main_vector[0], main_vector[i]);
+            else swap(0, i);
             heapify(0, i);
         }
     }
@@ -756,12 +901,17 @@ public:
 
     int MAX_ELEMENT = 1000;
     bool done_phase = false, can_sort = true, can_populate = true, sorted = false, stopped = false;
-    std::vector<int> sort_to_max_limited = { 2000, 2000, 2000, 10000, 10000, 10000, 20000, 20000 };
-    std::vector<int> sort_to_max_unlimited = { 40000, 40000, 40000, 1000000, 1000000, 1000000, 1000000, 1000000 };
+    std::vector<int> sort_to_max_limited = { 2000, 2000, 2000, 10000, 10000, 10000, 10000, 20000, 20000 };
+    std::vector<int> sort_to_max_unlimited = { 40000, 40000, 40000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000 };
     std::vector<Sort> sort_chosen = { Sort::bubble, Sort::insertion, Sort::quick };
     int current_sort = 0;
 private:
+    enum class ActionType
+    {
+        comparison, swap, set, green_set
+    };
     bool vertices_used = false;
+    bool PURE_SORTING = false;
     sf::RenderWindow* window;
 
     std::vector<int> main_vector, orig_main_vector;
@@ -784,6 +934,7 @@ private:
     std::vector<std::string> sort_info = { "Bubble Sort",
                                             "Shaker Sort",
                                             "Insertion Sort",
+                                            "Shell Sort",
                                             "Quick Sort",
                                             "Merge Sort",
                                             "Heap Sort",
@@ -791,12 +942,14 @@ private:
                                             "Radix Sort" };
 };
 
-
+// Button class, with many parameters controlling its behaviour
 class Button
 {
 public:
     Button() {}
-    Button(float x_, float y_, float width_, float height_, std::string text_, sf::RenderWindow* window_, MainVector* main_vec_, bool push_to_vector, bool holdable_ = true, Button* parent_ = nullptr, bool unpress_on_press_ = false, bool is_pressable_when_sorting_ = true, int priority_ = 0, bool enabled_ = true, sf::Color NEW_NORMAL_COLOR = sf::Color::Transparent, sf::Color NEW_HOVERED_COLOR = sf::Color::Transparent, sf::Color NEW_PRESSED_COLOR = sf::Color::Transparent) : x(x_), y(y_), width(width_), height(height_), holdable(holdable_), text_string(text_), start_text(text_)
+    Button(float x_, float y_, float width_, float height_, std::string text_, sf::RenderWindow* window_, MainVector* main_vec_,
+        bool push_to_vector, bool holdable_ = true, Button* parent_ = nullptr, bool unpress_on_press_ = false, bool is_pressable_when_sorting_ = true, int priority_ = 0, bool enabled_ = true, 
+        sf::Color NEW_NORMAL_COLOR = sf::Color::Transparent, sf::Color NEW_HOVERED_COLOR = sf::Color::Transparent, sf::Color NEW_PRESSED_COLOR = sf::Color::Transparent) : x(x_), y(y_), width(width_), height(height_), holdable(holdable_), text_string(text_), start_text(text_)
     {
         if (push_to_vector) all_buttons.push_back(ButtonPriority(Pressable::button, (void*)this, priority_));
         if (NEW_NORMAL_COLOR != sf::Color::Transparent)
@@ -852,13 +1005,7 @@ public:
                 break;
             }
         }
-        if (text_string == "START")
-        {
-            if (main_vec->can_sort)
-            {
-                main_vec->sort();
-            }
-        }
+        if (text_string == "START" && main_vec->can_sort) main_vec->sort();
         if (text_string == "STOP")
         {
             if (main_vec->stopped) main_vec->unstop();
@@ -889,6 +1036,7 @@ public:
         text.setOrigin(text_rect.getSize().x / 2, text_rect.getSize().y / 2);
         text.setPosition(sf::Vector2f(x + width / 2, y + height / 2 - 7));
     }
+
     bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
         if (!enabled) return false;
@@ -910,12 +1058,14 @@ public:
         }
         return false;
     }
+
     void draw()
     {
         if (!enabled) return;
         window->draw(rect);
         window->draw(text);
     }
+
     bool enabled = true;
 protected:
     float x = 0, y = 0;
@@ -941,6 +1091,7 @@ protected:
     std::vector<std::pair<std::string, Sort>> string_to_sort = { {"BUBBLE", Sort::bubble},
                                                                 {"SHAKER", Sort::coctail_shaker},
                                                                 {"INSERTION", Sort::insertion},
+                                                                {"SHELL", Sort::shell},
                                                                 {"QUICK", Sort::quick},
                                                                 {"MERGE", Sort::merge},
                                                                 {"HEAP", Sort::heap},
@@ -948,6 +1099,8 @@ protected:
                                                                 { "RADIX", Sort::radix } };
 };
 
+
+// DropDownButton is a button with multiple button choices
 class DropDownButton
 {
 public:
@@ -1006,6 +1159,7 @@ private:
     std::vector<Button*> choices;
 };
 
+// Slider class, used for changing variables in set range
 class Slider
 {
 public:
@@ -1100,7 +1254,7 @@ private:
     MainVector* main_vec = nullptr;
 };
 
-
+// TextWindow class, used for changing variables with text entry boxes
 class TextWindow
 {
 public:
@@ -1216,6 +1370,7 @@ protected:
     std::vector<Button*> main_buttons;
 };
 
+// CheckBox class, used for changing varibles that have only 2 states
 class CheckBox
 {
 public:
@@ -1281,12 +1436,15 @@ private:
 int main()
 {
     srand(time(nullptr));
+
+    // Create main window and set its parameters
     sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Sorting", sf::Style::Titlebar | sf::Style::Close);
     sf::Image icon;
     icon.loadFromFile("icon.png");
     window.setFramerateLimit(60);
     window.setIcon(icon.getSize().x, icon.getSize().y, icon.getPixelsPtr());
 
+    // Rectangle of the menu, buttons are placed based on its size and position
     sf::RectangleShape menu_rect(sf::Vector2f(WIDTH - SORT_WIDTH, HEIGHT));
     menu_rect.setPosition(sf::Vector2f(SORT_WIDTH + 4, 0));
     menu_rect.setFillColor(sf::Color(220, 220, 220));
@@ -1296,12 +1454,13 @@ int main()
     POPULATION = 100;
     MainVector vec(POPULATION, &window);
 
+    // Create all the main buttons
     Button start_button(SORT_WIDTH + 12, HEIGHT - 70, (WIDTH - SORT_WIDTH) - 20, 60, "START", &window, &vec, true, false);
     Button stop_button(SORT_WIDTH + 12, HEIGHT - 110, (WIDTH - SORT_WIDTH) - 20, 30, "STOP", &window, &vec, true, false);
 
-    DropDownButton sort_choice_button1(SORT_WIDTH + 12, 10, (WIDTH - SORT_WIDTH) - 20, 50, "BUBBLE", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
-    DropDownButton sort_choice_button2(SORT_WIDTH + 12, 70, (WIDTH - SORT_WIDTH) - 20, 50, "INSERTION", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
-    DropDownButton sort_choice_button3(SORT_WIDTH + 12, 130, (WIDTH - SORT_WIDTH) - 20, 50, "QUICK", { "BUBBLE", "SHAKER", "INSERTION", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+    DropDownButton sort_choice_button1(SORT_WIDTH + 12, 10, (WIDTH - SORT_WIDTH) - 20, 50, "BUBBLE", { "BUBBLE", "SHAKER", "INSERTION", "SHELL", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+    DropDownButton sort_choice_button2(SORT_WIDTH + 12, 70, (WIDTH - SORT_WIDTH) - 20, 50, "INSERTION", { "BUBBLE", "SHAKER", "INSERTION", "SHELL", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
+    DropDownButton sort_choice_button3(SORT_WIDTH + 12, 130, (WIDTH - SORT_WIDTH) - 20, 50, "QUICK", { "BUBBLE", "SHAKER", "INSERTION", "SHELL", "QUICK", "MERGE", "HEAP", "COUNTING", "RADIX" }, &window, &vec);
 
     Slider animation_speed_slider(SORT_WIDTH + 12, HEIGHT - 260, (WIDTH - SORT_WIDTH) - 20, 40, "ANIM. SPEED", { 1, 100 }, &ACTIONS_PER_FRAME, &window, &vec, { 100, 1000 });
     Slider sound_slider(SORT_WIDTH + 12, HEIGHT - 320, (WIDTH - SORT_WIDTH) - 20, 40, "SOUND", { 0, 100 }, &SOUND_COEFF, &window, &vec);
@@ -1312,6 +1471,7 @@ int main()
 
     TextWindow population_window(SORT_WIDTH + 12, HEIGHT - 190, (WIDTH - SORT_WIDTH) - 20, 40, "SETTINGS", { "SIZE", "MAX" }, { { 5, 2000 }, {2, 100000000} }, { POPULATION, vec.MAX_ELEMENT }, &window, &vec, 2);
 
+    // Sort them based on their priority
     sort(all_buttons.begin(), all_buttons.end(), [](ButtonPriority& left, ButtonPriority& right) {return left.priority > right.priority; });
 
     while (window.isOpen())
@@ -1329,6 +1489,8 @@ int main()
         sf::Event event;
         bool mouse_pressed_this_frame = false, mouse_pressed = false;
         sf::Keyboard::Scan::Scancode key_pressed = sf::Keyboard::Scan::Unknown;
+
+        // Handle events loop
         while (window.pollEvent(event))
         {
             if (event.type == sf::Event::Closed)
@@ -1346,6 +1508,8 @@ int main()
 
         sf::Vector2i mouse_pos = sf::Mouse::getPosition(window);
 
+        // Update all the buttons
+        // Looks very bad, unfortunately this is the least problematic way of handling button priority without rewriting it from the ground up.
         for (int i = 0; i < all_buttons.size(); i++)
         {
             if (all_buttons[i].pressable == Pressable::button)
@@ -1375,11 +1539,12 @@ int main()
             }
         }
 
+        // Clear the window, draw the menu base and MainVector on it
         window.clear(BACKGROUND_COLOR);
         window.draw(menu_rect);
-
         vec.draw();
-
+        
+        // Draw all the buttons on the window
         for (int i = all_buttons.size() - 1; i >= 0; i--)
         {
             if (all_buttons[i].pressable == Pressable::button)
@@ -1409,6 +1574,7 @@ int main()
             }
         }
 
+        // Display changes on the window
         window.display();
     }
 }
