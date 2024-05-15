@@ -8,16 +8,18 @@
 
 int WIDTH = 1200, HEIGHT = 800;
 int SORT_WIDTH = WIDTH * 0.85;
+int IMAGE_HEIGHT = 700;
 
 sf::Color BACKGROUND_COLOR(230, 230, 230);
 sf::Color ACTION_COLOR(255, 0, 0);
 sf::Color NORMAL_COLOR(200, 200, 255);
+sf::Color LIGHT_BLUE(200, 200, 255);
+sf::Color WHITE(255, 255, 255);
 sf::Color DONE_COLOR(0, 255, 0);
 int ACTIONS_PER_FRAME = 20;
 int SOUND_COEFF = 20;
 int POPULATION = 100;
-int IS_ANIMATION = 0;
-
+bool IS_ANIMATION = false;
 enum class Sort { bubble, coctail_shaker, insertion, shell, quick, merge, heap, counting, radix };
 enum class Pressable { button, slider, textbox, dropdown, checkbox };
 
@@ -84,6 +86,7 @@ public:
         for (int i = 0; i < 1000; i++)
         {
             beep_pitches[i] = 0.2 + i * 0.0012;
+            beep_pitches[i] = 0.2 + i * 0.0012;
         }
     }
 
@@ -91,6 +94,7 @@ public:
     // Additionally sets RectangleShapes or Vertexes (based on population size) to their corresponding array elements
     void populate_vector(size_t population)
     {
+        NORMAL_COLOR = image_sort ? WHITE : LIGHT_BLUE;
         if (!(can_populate || stopped)) return;
         element_width = SORT_WIDTH / (int(population) * 1.0);
         if (element_width > 3) vertices_used = false;
@@ -140,7 +144,7 @@ public:
             if (!vertices_used)
             {
                 orig_rectangle_vector[i] = new sf::RectangleShape();
-                orig_rectangle_vector[i]->setSize(sf::Vector2f(element_width - 1, double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT));
+                orig_rectangle_vector[i]->setSize(sf::Vector2f(element_width - 1, image_sort ? IMAGE_HEIGHT : (double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT)));
                 orig_rectangle_vector[i]->setPosition(sf::Vector2f(i * element_width, HEIGHT - orig_rectangle_vector[i]->getSize().y));
                 orig_rectangle_vector[i]->setFillColor(NORMAL_COLOR);
                 orig_rectangle_vector[i]->setOutlineThickness(int(1));
@@ -151,23 +155,26 @@ public:
             }
             else
             {
-
                 int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
 
-                orig_vertex_vector[i * add] = sf::Vertex(sf::Vector2f(i * element_width, HEIGHT - (double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT)), NORMAL_COLOR);
-                orig_vertex_vector[i * add + 1] = sf::Vertex(sf::Vector2f(i * element_width, HEIGHT), NORMAL_COLOR);
+                orig_vertex_vector[i * add] = sf::Vertex(sf::Vector2f(i * element_width, image_sort ? HEIGHT - IMAGE_HEIGHT : HEIGHT - (double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT)), NORMAL_COLOR, sf::Vector2f(10, 10));
+                orig_vertex_vector[i * add + 1] = sf::Vertex(sf::Vector2f(i * element_width, HEIGHT), NORMAL_COLOR, sf::Vector2f(20, 20));
                 vertex_vector[i * add] = orig_vertex_vector[i * add];
                 vertex_vector[i * add + 1] = orig_vertex_vector[i * add + 1];
                 if (orig_vertex_vector.getPrimitiveType() == sf::Quads)
                 {
-                    orig_vertex_vector[i * add + 2] = sf::Vertex(sf::Vector2f((i + 1) * element_width, HEIGHT), NORMAL_COLOR);
-                    orig_vertex_vector[i * add + 3] = sf::Vertex(sf::Vector2f((i + 1) * element_width, HEIGHT - (double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT)), NORMAL_COLOR);
+                    orig_vertex_vector[i * add + 2] = sf::Vertex(sf::Vector2f((i + 1) * element_width, HEIGHT), NORMAL_COLOR, sf::Vector2f(10, 10));
+                    orig_vertex_vector[i * add + 3] = sf::Vertex(sf::Vector2f((i + 1) * element_width, image_sort ? HEIGHT - IMAGE_HEIGHT : HEIGHT - (double(orig_main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT)), NORMAL_COLOR, sf::Vector2f(10, 0));
                     vertex_vector[i * add + 2] = orig_vertex_vector[i * add + 2];
                     vertex_vector[i * add + 3] = orig_vertex_vector[i * add + 3];
                 }
             }
         }
-        main_vector = orig_main_vector;
+        main_vector.resize(orig_main_vector.size());
+        for (int i = 0; i < main_vector.size(); i++)
+        {
+            main_vector[i] = std::make_pair(orig_main_vector[i], i);
+        }
 
         can_populate = true;
         can_sort = true;
@@ -184,7 +191,8 @@ public:
         int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
         for (int i = 0; i < main_vector.size(); i++)
         {
-            main_vector[i] = orig_main_vector[i];
+            main_vector[i].first = orig_main_vector[i];
+            main_vector[i].second = i;
             if (vertices_used)
             {
                 for (int k = 0; k < add; k++)
@@ -192,7 +200,10 @@ public:
                     vertex_vector[i * add + k] = orig_vertex_vector[i * add + k];
                 }
             }
-            else *rectangle_vector[i] = *orig_rectangle_vector[i];
+            else
+            {
+                *(rectangle_vector[i]) = *(orig_rectangle_vector[i]);
+            }
         }
         new_idxs.resize(main_vector.size());
         for (int i = 0; i < main_vector.size(); i++) new_idxs[i] = i;
@@ -237,7 +248,8 @@ public:
     // Sets value in main_vector[dest] equal to value in orig_main_vector[source], pushes info into changes array
     void set(int dest, int source)
     {
-        main_vector[dest] = orig_main_vector[source];
+        main_vector[dest].first = orig_main_vector[source];
+        main_vector[dest].second = source;
         if (IS_ANIMATION) changes.push_back({ dest, source, (int)ActionType::set });
         else writes[current_sort]++;
     }
@@ -260,14 +272,29 @@ public:
             int idx_i = i * add, idx_j = j * add;
 
             sf::Vector2f temp = vertex_vector[idx_i].position;
+
             vertex_vector[idx_i].position.y = vertex_vector[idx_j].position.y;
             vertex_vector[idx_j].position.y = temp.y;
+
+            sf::Vector2f temp_text = vertex_vector[idx_i].texCoords;
+            vertex_vector[idx_i].texCoords = vertex_vector[idx_j].texCoords;
+            vertex_vector[idx_j].texCoords = temp_text;
+            temp_text = vertex_vector[idx_i + 1].texCoords;
+            vertex_vector[idx_i + 1].texCoords = vertex_vector[idx_j + 1].texCoords;
+            vertex_vector[idx_j + 1].texCoords = temp_text;
 
             if (add == 4)
             {
                 temp = vertex_vector[idx_i + 3].position;
                 vertex_vector[idx_i + 3].position.y = vertex_vector[idx_j + 3].position.y;
                 vertex_vector[idx_j + 3].position.y = temp.y;
+
+                temp_text = vertex_vector[idx_i + 2].texCoords;
+                vertex_vector[idx_i + 2].texCoords = vertex_vector[idx_j + 2].texCoords;
+                vertex_vector[idx_j + 2].texCoords = temp_text;
+                temp_text = vertex_vector[idx_i + 3].texCoords;
+                vertex_vector[idx_i + 3].texCoords = vertex_vector[idx_j + 3].texCoords;
+                vertex_vector[idx_j + 3].texCoords = temp_text;
             }
         }
     }
@@ -280,7 +307,7 @@ public:
     {
         if (IS_ANIMATION) changes.push_back({ i, j, (int)ActionType::comparison });
         else comparisons[current_sort]++;
-        return cmp(main_vector[i], main_vector[j]);
+        return cmp(main_vector[i].first, main_vector[j].first);
     }
 
     void stop()
@@ -319,6 +346,18 @@ public:
                 }
                 else
                 {
+                    if (image_sort)
+                    {
+                        for (int i = 0; i < main_vector.size(); i++)
+                        {
+                            if (!vertices_used) rectangle_vector[i]->setFillColor(NORMAL_COLOR);
+                            else
+                            {
+                                int add = vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
+                                for (int k = 0; k < add; k++) vertex_vector[i * add + k].color = NORMAL_COLOR;
+                            }
+                        }
+                    }
                     sorted = true;
                     can_sort = true;
                     can_populate = true;
@@ -351,7 +390,15 @@ public:
                     if (vertices_used)
                     {
                         vertex_vector[i_idx].position.y = orig_vertex_vector[j_idx].position.y;
-                        if (vertex_vector.getPrimitiveType() == sf::Quads) vertex_vector[i_idx + 3].position.y = orig_vertex_vector[j_idx + 3].position.y;
+
+                        vertex_vector[i_idx].texCoords = orig_vertex_vector[j_idx].texCoords;
+                        vertex_vector[i_idx + 1].texCoords = orig_vertex_vector[j_idx + 1].texCoords;
+                        if (vertex_vector.getPrimitiveType() == sf::Quads)
+                        {
+                            vertex_vector[i_idx + 3].position.y = orig_vertex_vector[j_idx + 3].position.y;
+                            vertex_vector[i_idx + 2].texCoords = orig_vertex_vector[j_idx + 2].texCoords;
+                            vertex_vector[i_idx + 3].texCoords = orig_vertex_vector[j_idx + 3].texCoords;
+                        }
                     }
                     else
                     {
@@ -415,13 +462,18 @@ public:
                         float prev_pos1 = vertex_vector[i].position.x;
                         vertex_vector[i].position.x = int(vertex_vector[i].position.x);
                         vertex_vector[i + 1].position.x = int(vertex_vector[i].position.x);
-                        window->draw(&vertex_vector[i], add, sf::Lines);
+                        if (image_sort && (sorted || !can_populate)) window->draw(&vertex_vector[i], add, sf::Lines, &sort_image_text);
+                        else window->draw(&vertex_vector[i], add, sf::Lines);
                         vertex_vector[i].position.x = prev_pos1;
                         vertex_vector[i + 1].position.x = prev_pos1;
                     }
                 }
             }
-            else window->draw(vertex_vector);
+            else
+            {
+                if (image_sort && (sorted || !can_populate)) window->draw(&vertex_vector[0], vertex_vector.getVertexCount(), sf::Quads, &sort_image_text);
+                else window->draw(&vertex_vector[0], vertex_vector.getVertexCount(), sf::Quads);
+            }
         }
 
         // After we finished drawing, change the colors of changed rectangles or vertices back to normal
@@ -471,6 +523,7 @@ public:
         if (ACTIONS_TO_DO > 0)
         {
             int ratio = int((avg / cnt / HEIGHT) * 999);
+            if (image_sort) ratio = rand() % 400 + 300;
             sf::Sound* sound = new sf::Sound(trimmed_buffer);
             sound->setVolume(SOUND_COEFF / 7.0);
             sound->setPitch(beep_pitches[ratio]);
@@ -483,6 +536,14 @@ public:
     // Main sort method
     void sort()
     {
+        // If image mode is selected, reload the image
+        if (image_sort)
+        {
+            sort_image.loadFromFile("images\\image" + std::to_string(rand() % 3) + ".jpeg");
+            sort_image_text.loadFromImage(sort_image);
+            if (image_sort) populate_vector(main_vector.size());
+        }
+
         // Populate main array with appropriate size if the size set is too big for one of the chosen sort algorithms
         if (IS_ANIMATION)
         {
@@ -501,7 +562,7 @@ public:
         PURE_SORTING = true;
 
         // First sort done with PURE_SORTING set to true, to measure accurate time of sorts performed.
-        // PURE_SORTING set to true makes comparisons and swaps not call additional functions causing significant speedloss.
+        // PURE_SORTING set to true makes comparisons and swaps not call additional functions causing significant speed loss.
         for (int i = 0; i < sorts; i++)
         {
             current_sort = i;
@@ -529,6 +590,38 @@ public:
         IS_ANIMATION = (sorts == 1 ? true : false);
         PURE_SORTING = false;
 
+        if (image_sort)
+        {
+            float pixels_per_rect = (float)sort_image.getSize().x / (float)main_vector.size();
+            if (IS_ANIMATION)
+            {
+                while (texts.size() < main_vector.size()) texts.push_back(new sf::Texture);
+                if (!vertices_used)
+                {
+                    for (int i = 0; i < main_vector.size(); i++)
+                    {
+                        texts[i]->loadFromImage(sort_image, sf::IntRect(sf::Vector2i(pixels_per_rect * i, 0), sf::Vector2i(pixels_per_rect, sort_image.getSize().y)));
+                        orig_rectangle_vector[main_vector[i].second]->setTexture(texts[i]);
+                    }
+                }
+                else
+                {
+                    int temp = orig_vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4;
+                    for (int i = 0; i < main_vector.size(); i++)
+                    {
+                        int idx = main_vector[i].second * temp;
+                        orig_vertex_vector[idx].texCoords = sf::Vector2f(pixels_per_rect * i, 0);
+                        orig_vertex_vector[idx + 1].texCoords = sf::Vector2f(pixels_per_rect * i, sort_image_text.getSize().y);
+                        if (temp == 4)
+                        {
+                            orig_vertex_vector[idx + 2].texCoords = sf::Vector2f(pixels_per_rect * (i + 1), sort_image_text.getSize().y);
+                            orig_vertex_vector[idx + 3].texCoords = sf::Vector2f(pixels_per_rect * (i + 1), 0);
+                        }
+                    }
+                }
+            }
+        }
+
         // Second sort done with PURE_SORTING set to false, to fill the changes array, get the comparison and write amount.
         for (int i = 0; i < sorts; i++)
         {
@@ -552,21 +645,21 @@ public:
         }
 
         // If mode is set to compare, change all rectangles and vertices according to elements in already sorted array.
-        // Additionly, push 1 comparison to changes array so the sort ending animation triggers.
+        // Additionally, push 1 comparison to changes array so the sort ending animation triggers.
         if (!IS_ANIMATION)
         {
             for (int i = 0; i < main_vector.size(); i++)
             {
                 if (!vertices_used)
                 {
-                    rectangle_vector[i]->setSize(sf::Vector2f(element_width, double(main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT));
+                    rectangle_vector[i]->setSize(sf::Vector2f(element_width, double(main_vector[i].first) / (MAX_ELEMENT * 1.1) * HEIGHT));
                     rectangle_vector[i]->setPosition(sf::Vector2f(i * element_width, HEIGHT - rectangle_vector[i]->getSize().y));
                 }
                 else
                 {
                     int i_idx = (i * (vertex_vector.getPrimitiveType() == sf::Lines ? 2 : 4));
-                    vertex_vector[i_idx].position.y = HEIGHT - (double(main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT);
-                    if (vertex_vector.getPrimitiveType() == sf::Quads) vertex_vector[i_idx + 3].position.y = HEIGHT - (double(main_vector[i]) / (MAX_ELEMENT * 1.1) * HEIGHT);
+                    vertex_vector[i_idx].position.y = HEIGHT - (double(main_vector[i].first) / (MAX_ELEMENT * 1.1) * HEIGHT);
+                    if (vertex_vector.getPrimitiveType() == sf::Quads) vertex_vector[i_idx + 3].position.y = HEIGHT - (double(main_vector[i].first) / (MAX_ELEMENT * 1.1) * HEIGHT);
                 }
             }
             changes.push_back({ 0, 0, (int)ActionType::comparison});
@@ -581,7 +674,10 @@ public:
             {
                 if (PURE_SORTING)
                 {
-                    if (main_vector[j - 1] > main_vector[j]) std::swap(main_vector[j - 1], main_vector[j]);
+                    if (main_vector[j - 1].first > main_vector[j].first)
+                    {
+                        std::swap(main_vector[j - 1], main_vector[j]);
+                    }
                 }
                 else if (compare(j - 1, j, more_than)) swap(j - 1, j);
             }
@@ -597,7 +693,7 @@ public:
             {
                 if (PURE_SORTING)
                 {
-                    if (main_vector[j - 1] > main_vector[j])
+                    if (main_vector[j - 1].first > main_vector[j].first)
                     {
                         std::swap(main_vector[j - 1], main_vector[j]);
                         sorted = false;
@@ -615,7 +711,7 @@ public:
             {
                 if (PURE_SORTING)
                 {
-                    if (main_vector[j - 1] > main_vector[j])
+                    if (main_vector[j - 1].first > main_vector[j].first)
                     {
                         std::swap(main_vector[j - 1], main_vector[j]);
                         sorted = false;
@@ -639,7 +735,10 @@ public:
             {
                 if (PURE_SORTING)
                 {
-                    if (main_vector[j - 1] > main_vector[j]) std::swap(main_vector[j - 1], main_vector[j]);
+                    if (main_vector[j - 1].first > main_vector[j].first)
+                    {
+                        std::swap(main_vector[j - 1], main_vector[j]);
+                    }
                     else break;
                 }
                 else if (compare(j - 1, j, more_than)) swap(j - 1, j);
@@ -654,9 +753,12 @@ public:
         {
             for (int i = gap; i < main_vector.size(); i++)
             {
-                for (int j = i; j >= gap && (PURE_SORTING ? main_vector[j - gap] > main_vector[j] : compare(j - gap, j, more_than)); j -= gap)
+                for (int j = i; j >= gap && (PURE_SORTING ? main_vector[j - gap].first > main_vector[j].first : compare(j - gap, j, more_than)); j -= gap)
                 {
-                    if (PURE_SORTING) std::swap(main_vector[j], main_vector[j - gap]);
+                    if (PURE_SORTING)
+                    {
+                        std::swap(main_vector[j], main_vector[j - gap]);
+                    }
                     else swap(j, j - gap);
                 }
             }
@@ -674,7 +776,10 @@ public:
         int mid = (left + right) / 2;
         if (mid != right)
         {
-            if (PURE_SORTING) std::swap(main_vector[mid], main_vector[right]);
+            if (PURE_SORTING)
+            {
+                std::swap(main_vector[mid], main_vector[right]);
+            }
             else swap(mid, right);
         }
         int idx = left;
@@ -682,7 +787,7 @@ public:
         {
             if (PURE_SORTING)
             {
-                if (main_vector[i] > main_vector[right])
+                if (main_vector[i].first < main_vector[right].first)
                 {
                     std::swap(main_vector[i], main_vector[idx]);
                     idx++;
@@ -696,7 +801,10 @@ public:
         }
         if (idx != right)
         {
-            if (PURE_SORTING) std::swap(main_vector[idx], main_vector[right]);
+            if (PURE_SORTING)
+            {
+                std::swap(main_vector[idx], main_vector[right]);
+            }
             else swap(idx, right);
         }
         int right_idx = idx + 1;
@@ -704,7 +812,7 @@ public:
         {
             if (PURE_SORTING)
             {
-                if (main_vector[i] == main_vector[idx])
+                if (main_vector[i].first == main_vector[idx].first)
                 {
                     std::swap(main_vector[i], main_vector[right_idx]);
                     right_idx++;
@@ -731,26 +839,26 @@ public:
         int mid = (left + right) / 2;
         merge_sort_helper(left, mid);
         merge_sort_helper(mid + 1, right);
-        std::vector<int> arr(right - left + 1);
+        std::vector<std::pair<int, int>> arr(right - left + 1);
         int idx = 0;
         int left_idx = left, right_idx = mid + 1;
         while (left_idx <= mid || right_idx <= right)
         {
             if (IS_ANIMATION)
             {
-                if (left_idx > mid) arr[idx++] = right_idx++;
-                else if (right_idx > right) arr[idx++] = left_idx++;
+                if (left_idx > mid) arr[idx++].first = right_idx++;
+                else if (right_idx > right) arr[idx++].first = left_idx++;
                 else
                 {
                     if (PURE_SORTING)
                     {
-                        if (main_vector[left_idx] < main_vector[right_idx]) arr[idx++] = left_idx++;
-                        else arr[idx++] = right_idx++;
+                        if (main_vector[left_idx].first < main_vector[right_idx].first) arr[idx++].first = left_idx++;
+                        else arr[idx++].first = right_idx++;
                     }
                     else
                     {
-                        if (compare(left_idx, right_idx, less_than)) arr[idx++] = left_idx++;
-                        else arr[idx++] = right_idx++;
+                        if (compare(left_idx, right_idx, less_than)) arr[idx++].first = left_idx++;
+                        else arr[idx++].first = right_idx++;
                     }
                 }
             }
@@ -762,8 +870,8 @@ public:
                 {
                     if (PURE_SORTING)
                     {
-                        if (main_vector[left_idx] < main_vector[right_idx]) arr[idx++] = main_vector[left_idx++];
-                        else arr[idx++] = right_idx++;
+                        if (main_vector[left_idx].first < main_vector[right_idx].first) arr[idx++] = main_vector[left_idx++];
+                        else arr[idx++] = main_vector[right_idx++];
                     }
                     else
                     {
@@ -778,10 +886,10 @@ public:
         {
             for (int i = left; i <= right; i++)
             {
-                swap(i, arr[i - left]);
+                swap(i, arr[i - left].first);
                 for (int j = i - left + 1; j <= right - left; j++)
                 {
-                    if (arr[j] == i)
+                    if (arr[j].first == i)
                     {
                         arr[j] = arr[i - left];
                         break;
@@ -804,7 +912,7 @@ public:
         {
             if (PURE_SORTING)
             {
-                if (main_vector[left_idx] > main_vector[largest_idx]) largest_idx = left_idx;
+                if (main_vector[left_idx].first > main_vector[largest_idx].first) largest_idx = left_idx;
             }
             else
             {
@@ -815,7 +923,7 @@ public:
         {
             if (PURE_SORTING)
             {
-                if (main_vector[right_idx] > main_vector[largest_idx]) largest_idx = right_idx;
+                if (main_vector[right_idx].first > main_vector[largest_idx].first) largest_idx = right_idx;
             }
             else
             {
@@ -847,8 +955,8 @@ public:
         writes[current_sort] += MAX_ELEMENT;
         for (int i = 0; i < main_vector.size(); i++)
         {
-            arr[main_vector[i]].first++;
-            arr[main_vector[i]].second = i;
+            arr[main_vector[i].first].first++;
+            arr[main_vector[i].first].second = i;
             compare(i, i, [](int a, int b) {return a < b; });
         }
         int idx = 0;
@@ -864,12 +972,12 @@ public:
 
     void radix_sort()
     {
-        int max_element = main_vector[0], max_element_idx = 0;
+        int max_element = main_vector[0].first, max_element_idx = 0;
         for (int i = 1; i < main_vector.size(); i++)
         {
             if (compare(i, max_element_idx, more_than))
             {
-                max_element = main_vector[i];
+                max_element = main_vector[i].first;
                 max_element_idx = i;
             }
         }
@@ -882,7 +990,7 @@ public:
             std::vector<std::vector<int>> counting_arr(10, std::vector<int>());
             for (int i = 0; i < main_vector.size(); i++)
             {
-                int current_digit = (main_vector[i] / divisor) % 10;
+                int current_digit = (main_vector[i].first / divisor) % 10;
                 counting_arr[current_digit].push_back(new_idxs[i]);
             }
             int idx = 0;
@@ -900,7 +1008,7 @@ public:
     }
 
     int MAX_ELEMENT = 1000;
-    bool done_phase = false, can_sort = true, can_populate = true, sorted = false, stopped = false;
+    bool done_phase = false, can_sort = true, can_populate = true, sorted = false, stopped = false, image_sort = false;
     std::vector<int> sort_to_max_limited = { 2000, 2000, 2000, 10000, 10000, 10000, 10000, 20000, 20000 };
     std::vector<int> sort_to_max_unlimited = { 40000, 40000, 40000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000 };
     std::vector<Sort> sort_chosen = { Sort::bubble, Sort::insertion, Sort::quick };
@@ -914,10 +1022,15 @@ private:
     bool PURE_SORTING = false;
     sf::RenderWindow* window;
 
-    std::vector<int> main_vector, orig_main_vector;
+    std::vector<sf::Texture*> texts;
+    std::vector<std::pair<int, int>> main_vector;
+    std::vector<int> orig_main_vector;
+    std::vector<int> orig_idxs;
     std::vector<sf::RectangleShape*> rectangle_vector, orig_rectangle_vector;
     sf::VertexArray vertex_vector, orig_vertex_vector;
     std::vector<int> new_idxs;
+    sf::Image sort_image;
+    sf::Texture sort_image_text;
 
     std::vector<std::vector<int>> changes;
     int ACTIONS_DONE = 0;
@@ -1370,12 +1483,19 @@ protected:
     std::vector<Button*> main_buttons;
 };
 
-// CheckBox class, used for changing varibles that have only 2 states
+void func(MainVector* vec)
+{
+    vec->populate_vector(vec->get_size());
+}
+
+// CheckBox class, used for changing variables that have only 2 states
 class CheckBox
 {
 public:
-    CheckBox(float x, float y, float width, std::vector<std::string> text_, int* changing_value_, std::pair<int, int> set_values_, bool default_state, sf::RenderWindow* window_, MainVector* main_vec_)
+    CheckBox(float x, float y, float width, std::vector<std::string> text_, bool* changing_value_, std::pair<int, int> set_values_, bool default_state, bool enabled_, sf::RenderWindow* window_, MainVector* main_vec_, void (*func)(MainVector*))
     {
+        enabled = enabled_;
+        press_f = func;
         all_buttons.push_back(ButtonPriority(Pressable::checkbox, (void*)this, 0));
         main_vec = main_vec_;
         set_values = set_values_;
@@ -1400,11 +1520,20 @@ public:
     }
     void draw()
     {
+        if (text_vector[0] == "RECT MODE" && !IS_ANIMATION) return;
         window->draw(text);
         check_button->draw();
     }
     bool update(sf::Vector2i mouse_pos, bool mouse_pressed)
     {
+        if (text_vector[0] == "RECT MODE" && !IS_ANIMATION && check_button->is_pressed())
+        {
+            check_button->unpress();
+            *changing_value = set_values.first;
+            text.setString(text_vector[0]);
+            if (press_f != nullptr) press_f(main_vec);
+            return false;
+        }
         if (!main_vec->can_sort) return false;
         bool ans = check_button->update(mouse_pos, mouse_pressed);
         if (ans)
@@ -1419,18 +1548,21 @@ public:
                 *changing_value = set_values.first;
                 text.setString(text_vector[0]);
             }
+            if (press_f != nullptr) press_f(main_vec);
         }
         return ans;
     }
+    bool enabled;
 private:
     sf::RenderWindow* window;
     MainVector* main_vec;
     sf::Font font;
     sf::Text text;
     Button* check_button;
-    int* changing_value;
+    bool* changing_value;
     std::pair<int, int> set_values;
     std::vector<std::string> text_vector;
+    void(*press_f)(MainVector*);
 };
 
 int main()
@@ -1442,7 +1574,10 @@ int main()
     sf::Image icon;
     icon.loadFromFile("icon.png");
     window.setFramerateLimit(60);
-    window.setIcon(icon.getSize().x, icon.getSize().y, icon.getPixelsPtr());
+    //window.setIcon(icon.getSize().x, icon.getSize().y, icon.getPixelsPtr());
+
+    sf::Image sort_image;
+    sort_image.loadFromFile("image.jpeg");
 
     // Rectangle of the menu, buttons are placed based on its size and position
     sf::RectangleShape menu_rect(sf::Vector2f(WIDTH - SORT_WIDTH, HEIGHT));
@@ -1467,7 +1602,8 @@ int main()
     animation_speed_slider.set(ACTIONS_PER_FRAME);
     sound_slider.set(SOUND_COEFF);
 
-    CheckBox animate_checkbox(WIDTH - 30, HEIGHT - 370, 20, { "COMPARE MODE", "ANIMATE MODE"}, &IS_ANIMATION, {0, 1}, true, &window, &vec);
+    CheckBox animate_checkbox(WIDTH - 30, HEIGHT - 370, 20, { "COMPARE MODE", "ANIMATE MODE"}, &IS_ANIMATION, {0, 1}, true, true, &window, &vec, nullptr);
+    CheckBox image_checkbox(WIDTH - 30, HEIGHT - 400, 20, { "RECT MODE", "IMAGE MODE" }, &vec.image_sort, { 0, 1 }, false, true, &window, &vec, func);
 
     TextWindow population_window(SORT_WIDTH + 12, HEIGHT - 190, (WIDTH - SORT_WIDTH) - 20, 40, "SETTINGS", { "SIZE", "MAX" }, { { 5, 2000 }, {2, 100000000} }, { POPULATION, vec.MAX_ELEMENT }, &window, &vec, 2);
 
